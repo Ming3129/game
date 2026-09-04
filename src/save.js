@@ -1,4 +1,4 @@
-// 存档：一个 key + schema version，走平台 sdk.storage，不使用浏览器本地存储。
+// 存档：优先走平台 sdk.storage，本地降级使用 localStorage。
 import { getState, snapshot } from './state.js'
 
 const SAVE_KEY = 'save:blindbag'
@@ -11,22 +11,35 @@ export function bindSdk(sdk) {
 }
 
 export async function load() {
-  if (!_sdk) return null
+  if (_sdk) {
+    try {
+      const { value } = await _sdk.storage.get({ key: SAVE_KEY })
+      return value ?? null
+    } catch (e) {
+      console.warn('[save] load failed', e)
+    }
+  }
   try {
-    const { value } = await _sdk.storage.get({ key: SAVE_KEY })
-    return value ?? null
+    const raw = localStorage.getItem(SAVE_KEY)
+    return raw ? JSON.parse(raw) : null
   } catch (e) {
-    console.warn('[save] load failed', e)
     return null
   }
 }
 
 export async function saveNow(data) {
-  if (!_sdk) return
   const payload = data ?? snapshot(getState())
+  if (_sdk) {
+    try {
+      await _sdk.storage.set({ key: SAVE_KEY, value: { v: SCHEMA_VERSION, ...payload } })
+      return
+    } catch (e) {
+      console.warn('[save] save failed', e)
+    }
+  }
   try {
-    await _sdk.storage.set({ key: SAVE_KEY, value: { v: SCHEMA_VERSION, ...payload } })
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: SCHEMA_VERSION, ...payload }))
   } catch (e) {
-    console.warn('[save] save failed', e)
+    console.warn('[save] local save failed', e)
   }
 }

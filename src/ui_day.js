@@ -12,7 +12,7 @@ import {
 import { designCard, icon, toast, openModal, refresh } from './ui.js'
 import { sfx, burst, popIn } from './fx.js'
 import { saveNow } from './save.js'
-import { startLive } from './ui-live.js'
+import { startLive } from './ui_live.js'
 
 // 装袋草稿（临时态，不入档；按天保留，切页签不丢）。counts: designId -> 数量
 const draft = { day: 0, cat: null, counts: {}, coins: {} }
@@ -121,7 +121,7 @@ function renderShop(body) {
       ${list.map((d) => {
         const p = RARITIES[d.rarity].unitPrice
         return `<div class="restock-row">
-          <i class="rr-dot" style="--cc:${RARITIES[d.rarity].color}"></i>
+          <span class="rr-ic" style="color:${RARITIES[d.rarity].color};display:inline-flex;align-items:center;">${icon(d, 16)}</span>
           <span class="rr-name">${d.name}</span>
           <span class="rr-stock">库存 ${s.stock[d.id] || 0}</span>
           <span class="rr-price">¥${p}</span>
@@ -208,7 +208,7 @@ function openBoxModal(cat, tierKey, offerIdx = null) {
 // ---------- 装袋 ----------
 function renderPack(body) {
   const s = getState()
-  body.innerHTML = `<p class="pack-hint">每袋装 <b>1 件饰品 + 1 枚硬币</b>。硬币想怎么配就怎么配——同色硬币越多，对对碰连得越狠。</p>` +
+  body.innerHTML = `<p class="pack-hint">每袋装 <b>1 件饰品 + 1 枚硬币</b>。自由匹配硬币。</p>` +
     CAT_KEYS.map((cat) => {
       const packed = s.packed[cat] || []
       const stockN = CAT_KEYS_stockOf(s, cat)
@@ -218,7 +218,8 @@ function renderPack(body) {
           ${icon(cat, 20)}<span>${CATS[cat].name}</span>
           <em>库存 ${stockN} · 已装 ${packed.length} 袋</em><i class="arr">${open ? '▾' : '▸'}</i>
         </button>
-        ${open ? packPanel(s, cat) : packedSummary(s, cat)}
+        ${packedSummary(s, cat, open)}
+        ${open ? packPanel(s, cat) : ''}
       </div>`
     }).join('')
 
@@ -240,7 +241,7 @@ function CAT_KEYS_stockOf(s, cat) {
   return DESIGNS.filter((d) => d.cat === cat).reduce((n, d) => n + (s.stock[d.id] || 0), 0)
 }
 
-function packedSummary(s, cat) {
+function packedSummary(s, cat, open = false) {
   const packed = s.packed[cat] || []
   if (packed.length === 0) return ''
   const byDesign = {}
@@ -249,10 +250,17 @@ function packedSummary(s, cat) {
     byDesign[b.a] = (byDesign[b.a] || 0) + 1
     byCoin[b.c] = (byCoin[b.c] || 0) + 1
   }
-  return `<div class="packed-sum">
-    ${Object.entries(byDesign).map(([id, n]) => `<span class="chip">${designById(id).name} ×${n}</span>`).join('')}
-    <span class="chip coins">${Object.entries(byCoin).map(([k, n]) => `<i class="coin-dot sm" style="--cc:${COINS[k].hex}">${COINS[k].name}${n}</i>`).join('')}</span>
-    <button class="btn btn-mini btn-danger" data-unpack="${cat}">撤回</button>
+  return `<div class="packed-sum ${open ? 'in-open' : ''}">
+    <div class="ps-row ps-header">
+      <span class="packed-sum-tag">已装袋</span>
+      <button class="btn btn-mini btn-danger" data-unpack="${cat}">撤回全部</button>
+    </div>
+    <div class="ps-row ps-designs">
+      ${Object.entries(byDesign).map(([id, n]) => `<span class="chip">${designById(id).name} ×${n}</span>`).join('')}
+    </div>
+    <div class="ps-row ps-coins">
+      ${Object.entries(byCoin).map(([k, n]) => `<span class="chip"><i class="coin-dot sm" style="--cc:${COINS[k].hex}">${COINS[k].name}</i> ×${n}</span>`).join('')}
+    </div>
   </div>`
 }
 
@@ -262,34 +270,39 @@ function packPanel(s, cat) {
       const stock = s.stock[d.id] || 0
       const n = draft.counts[d.id] || 0
       return `<div class="pack-row ${stock === 0 ? 'off' : ''}">
-        <i class="rr-dot" style="--cc:${RARITIES[d.rarity].color}"></i>
+        <span class="pr-ic" style="color:${RARITIES[d.rarity].color};display:inline-flex;align-items:center;">${icon(d, 16)}</span>
         <span class="pr-name">${d.name}</span>
         <span class="pr-stock">库存 ${stock}</span>
         <div class="pr-step">
-          <button class="cs-btn" data-dec="${d.id}" ${n === 0 ? 'disabled' : ''}>−</button>
+          <button class="cs-btn cs-btn-quick" data-zero="${d.id}" ${n === 0 ? 'disabled' : ''} title="一键清空"><<</button>
+          <button class="cs-btn" data-dec="${d.id}" ${n === 0 ? 'disabled' : ''} title="减少1件"><</button>
           <b class="cs-n">${n}</b>
-          <button class="cs-btn" data-inc="${d.id}" ${stock === 0 || n >= stock ? 'disabled' : ''}>＋</button>
+          <button class="cs-btn" data-inc="${d.id}" ${stock === 0 || n >= stock ? 'disabled' : ''} title="增加1件">></button>
+          <button class="cs-btn cs-btn-quick" data-max="${d.id}" ${stock === 0 || n >= stock ? 'disabled' : ''} title="一键加满">>></button>
         </div>
       </div>`
     }).join('')
   const n = draftTotal()
   const coinSum = COIN_KEYS.reduce((a, k) => a + (draft.coins[k] || 0), 0)
-  const coinRows = COIN_KEYS.map((k) => `
-    <div class="coin-step">
+  const coinAdds = COIN_KEYS.map((k) => `
+    <button class="coin-add" data-addcoin="${k}" ${n === 0 || coinSum >= n ? 'disabled' : ''} title="点一下放一枚：${COINS[k].pair}">
       <i class="coin-dot" style="--cc:${COINS[k].hex}">${COINS[k].name}</i>
-      <span class="coin-eff">${COINS[k].pair}</span>
-      <button class="cs-btn" data-coin="${k}" data-d="-1">−</button>
-      <b class="cs-n">${draft.coins[k] || 0}</b>
-      <button class="cs-btn" data-coin="${k}" data-d="1">＋</button>
-    </div>`).join('')
+      <b>×${draft.coins[k] || 0}</b>
+      <em>${COINS[k].pair}</em>
+    </button>`).join('')
+  const coinChips = COIN_KEYS.flatMap((k) =>
+    Array.from({ length: draft.coins[k] || 0 }, () =>
+      `<button class="coin-added" data-rmcoin="${k}" title="点一下取回一枚"><i class="coin-dot sm" style="--cc:${COINS[k].hex}">${COINS[k].name}</i></button>`)
+  ).join('')
   const ready = n > 0 && coinSum === n
   return `<div class="pack-panel">
     <div class="pp-sec"><label>选饰品（每款用 ± 调数量）</label>
       <div class="pack-rows">${rows || '<span class="empty-hint">该品类还没有解锁款式，先去进货</span>'}</div>
       ${n ? `<span class="pp-count">共 ${n} 袋</span>` : ''}
     </div>
-    <div class="pp-sec"><label>配硬币（总数须 = ${n || 0}，同色越多对对碰越猛）<button class="btn btn-mini" data-act="autocoin" ${n === 0 ? 'disabled' : ''}>自动配币</button></label>
-      <div class="coin-steps">${coinRows}</div>
+    <div class="pp-sec"><label>配硬币（点硬币加入，点下方已放的取回；总数须 = ${n || 0}）<button class="btn btn-mini" data-act="autocoin" ${n === 0 ? 'disabled' : ''}>自动配币</button></label>
+      <div class="coin-adds">${coinAdds}</div>
+      <div class="coin-added-row">${coinChips || '<span class="empty-hint">还没放硬币，点上面加入</span>'}</div>
       <span class="pp-count ${coinSum === n ? '' : 'warn'}">硬币 ${coinSum} / ${n}</span>
     </div>
     <div class="pp-actions">
@@ -333,11 +346,43 @@ function wirePackPanel(body) {
       renderTab(body.closest('.tab-body'))
     }
   })
-  body.querySelectorAll('[data-coin]').forEach((b) => {
+  body.querySelectorAll('[data-zero]').forEach((b) => {
     b.onclick = () => {
       sfx.tap()
-      const k = b.dataset.coin
-      draft.coins[k] = Math.max(0, (draft.coins[k] || 0) + Number(b.dataset.d))
+      const id = b.dataset.zero
+      delete draft.counts[id]
+      renderTab(body.closest('.tab-body'))
+    }
+  })
+  body.querySelectorAll('[data-max]').forEach((b) => {
+    b.onclick = () => {
+      const s = getState()
+      const id = b.dataset.max
+      const stock = s.stock[id] || 0
+      if (stock <= 0) return
+      sfx.tap()
+      draft.counts[id] = stock
+      renderTab(body.closest('.tab-body'))
+    }
+  })
+  body.querySelectorAll('[data-addcoin]').forEach((b) => {
+    b.onclick = () => {
+      const s = getState()
+      const k = b.dataset.addcoin
+      const n = draftTotal()
+      const coinSum = COIN_KEYS.reduce((a, c) => a + (draft.coins[c] || 0), 0)
+      if (coinSum >= n) return toast('硬币总数要等于袋数', 'warn')
+      sfx.coin()
+      draft.coins[k] = (draft.coins[k] || 0) + 1
+      renderTab(body.closest('.tab-body'))
+    }
+  })
+  body.querySelectorAll('[data-rmcoin]').forEach((b) => {
+    b.onclick = () => {
+      sfx.tap()
+      const k = b.dataset.rmcoin
+      draft.coins[k] = Math.max(0, (draft.coins[k] || 0) - 1)
+      if (draft.coins[k] === 0) delete draft.coins[k]
       renderTab(body.closest('.tab-body'))
     }
   })
@@ -431,7 +476,7 @@ function renderCodex(body) {
           const unlocked = s.codex.includes(d.id)
           if (d.rarity === 'limited') {
             if (!unlocked) {
-              return `<div class="dcard rc-limited locked"><div class="dcard-ic">💎</div><div class="dcard-nm">？？？</div><div class="dcard-sub">宝石镶嵌解锁</div></div>`
+              return `<div class="dcard rc-limited locked"><div class="dcard-ic">${icon(d, 24)}</div><div class="dcard-nm">？？？</div><div class="dcard-sub">宝石镶嵌解锁</div></div>`
             }
             const held = s.vault.filter((v) => v.designId === d.id).length
             return designCard(d, { sub: `限定 · 待售 ${held}` })
@@ -471,7 +516,7 @@ function renderGem(body) {
       const d = designById(v.designId)
       const gem = GEMS.find((x) => x.key === v.gem)
       return `<div class="vault-row">
-        ${icon(d.cat, 18)}<span class="vr-name">${d.name}</span>
+        <span style="color:var(--pink-deep);display:inline-flex;align-items:center;">${icon(d, 18)}</span><span class="vr-name">${d.name}</span>
         <i class="gem-dot sm" style="--cc:${gem.hex}"></i>
         <span class="vr-price">订单价 ¥${v.price}</span>
         <em>已上架</em>

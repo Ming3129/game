@@ -27,6 +27,7 @@ export function startLive() {
   session = {
     orders, idx: -1, ctx: null, order: null,
     heat: Math.ceil(s.fans * HEAT_START_RATE), // 初始热度 = 粉丝数 ×15%
+    streamStarted: false,
   }
   setState({ screen: 'live' })
   saveNow()
@@ -59,8 +60,23 @@ export function renderLive(root) {
   updateHeat()
   const stage = root.querySelector('#stage')
   stage.innerHTML = `<div class="live-intro"><div class="li-ic">📡</div><b>直播准备中…</b><span>观众正在涌入</span></div>`
-  spawnDanmaku(DANMAKU.enter, 4)
   timers.push(setTimeout(() => nextOrder(stage), 1400))
+}
+
+// 观众随机昵称池
+const AUDIENCE_NAMES = [
+  '芝芝桃桃', '欧气满满', '小猫打呼噜', '星河碎碎冰', '今天不熬夜',
+  '奶糖泡泡', '草莓大福', '追光的小鹿', '橘子汽水', '可可脆脆',
+  '软绵绵的云', '暴富小锦鲤', '啵啵奶茶', '咸蛋黄泡芙', 'momo',
+  '甜甜圈圈', '柠檬气泡', '月亮邮局', '薄荷小调', '落日飞车',
+  '芋泥波波', '雪顶咖啡', '晴天小狗', '乌龙烤奶', '多肉葡萄',
+  '浅草微风', '丸子酱', '青提气泡水', '早睡早起', '锦鲤附体',
+  '棉花糖', '布丁豆豆', '焦糖布蕾', '快乐小羊', '奶茶续命选手'
+]
+
+function getRandomAudience() {
+  const base = AUDIENCE_NAMES[Math.floor(Math.random() * AUDIENCE_NAMES.length)]
+  return Math.random() > 0.45 ? `${base}_${Math.floor(Math.random() * 900 + 100)}` : base
 }
 
 // 热度：初始 = 粉丝×15%，每拆一袋 +1；超过粉丝数即「破圈」高亮
@@ -85,25 +101,67 @@ function endEarly() {
   endStream(stage)
 }
 
-function startDanmaku() {
-  timers.push(setInterval(() => {
-    if (document.getElementById('danmaku')) spawnDanmaku(DANMAKU.generic, 1)
-  }, 2600))
-}
-
-function spawnDanmaku(pool, n = 1) {
+// 右侧观众弹幕流：向上秩序滚动，带随机用户ID
+export function spawnDanmaku(pool, n = 1, delayStart = 0) {
   const layer = document.getElementById('danmaku')
   if (!layer) return
+  const list = Array.isArray(pool) ? pool : [pool]
+  if (list.length === 0) return
+
+  // 从池中随机挑选 n 个，尽量避免同批次重复
+  const chosen = []
+  const shuffled = [...list].sort(() => Math.random() - 0.5)
   for (let i = 0; i < n; i++) {
-    const el = document.createElement('span')
-    el.className = 'dm'
-    el.textContent = pool[Math.floor(Math.random() * pool.length)]
-    el.style.right = `${10 + Math.random() * 70}px`
-    el.style.animationDuration = `${3.5 + Math.random() * 2}s`
-    el.style.fontSize = `${11 + Math.random() * 4}px`
-    layer.appendChild(el)
-    el.addEventListener('animationend', () => el.remove())
+    chosen.push(shuffled[i % shuffled.length])
   }
+
+  for (let i = 0; i < chosen.length; i++) {
+    timers.push(setTimeout(() => {
+      const container = document.getElementById('danmaku')
+      if (!container) return
+      const text = chosen[i]
+      const user = getRandomAudience()
+      const el = document.createElement('div')
+      el.className = 'chat-item'
+      el.innerHTML = `<span class="ci-user">${user}</span><span class="ci-sep">:</span><span class="ci-text">${text}</span>`
+      container.appendChild(el)
+
+      // 保持秩序，最多保留8条常驻展示，多出则移除最旧的一条
+      while (container.children.length > 8) {
+        container.removeChild(container.firstChild)
+      }
+    }, delayStart + i * 280))
+  }
+}
+
+// 左侧专属通知流：buff、再加一袋、爆款、对对碰
+export function spawnLiveNotice(type, title, desc, extraHtml = '') {
+  const container = document.getElementById('liveEventFeed')
+  if (!container) return
+  const el = document.createElement('div')
+  el.className = `live-notice ln-${type}`
+  el.innerHTML = `
+    <span class="ln-badge">${title}</span>
+    <span class="ln-body">
+      <span class="ln-desc">${desc}</span>
+      ${extraHtml ? `<span class="ln-extra">${extraHtml}</span>` : ''}
+    </span>`
+  container.appendChild(el)
+
+  // 保持整洁，最多保留4条通知
+  while (container.children.length > 4) {
+    container.removeChild(container.firstChild)
+  }
+
+  // 4.5秒后淡出
+  timers.push(setTimeout(() => {
+    if (el.parentNode === container) {
+      el.classList.add('ln-out')
+      timers.push(setTimeout(() => {
+        if (el.parentNode === container) el.remove()
+      }, 280))
+    }
+  }, 4500))
 }
 
 function updateFoot() {
@@ -164,7 +222,6 @@ function nextOrder(stage) {
         <button class="btn btn-ghost" id="ocSkip">下播</button>
       </div>
     </div>`
-  spawnDanmaku(DANMAKU.order, 2)
   stage.querySelector('#ocGo').onclick = () => renderBagArea(stage)
   stage.querySelector('#ocSkip').onclick = () => endStream(stage)
   popIn(stage.querySelector('.order-card'))
@@ -179,14 +236,15 @@ function renderBagArea(stage) {
     <div class="bag-area3">
       <section class="lv-cam">
         <div class="lv-tag">直播画面</div>
-        <div class="danmaku" id="danmaku"></div>
+        <div class="live-feed-left" id="liveEventFeed"></div>
+        <div class="live-feed-right" id="danmaku"></div>
         <div class="lv-active" id="lvActive"><div class="lv-hint">点下方盲袋开拆</div></div>
       </section>
       <section class="lv-show">
         <div class="lv-tag">展示</div>
         <div class="show-colors">
           <span class="oc-chip">订单色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> 拆到加一袋</span>
-          <span class="oc-chip dim">今日幸运 <i class="coin-dot sm" style="--cc:${COINS[s.trend.lucky].hex}">${COINS[s.trend.lucky].name}</i> 触发该色buff</span>
+          <span class="oc-chip dim">今日幸运 <i class="coin-dot sm" style="--cc:${COINS[s.trend.lucky].hex}">${COINS[s.trend.lucky].name}</i> 对碰触发buff</span>
         </div>
         <div class="buff-row" id="buffList"></div>
         <div class="lv-mid">
@@ -202,6 +260,19 @@ function renderBagArea(stage) {
     </div>`
   const row = stage.querySelector('#lvQueue')
   for (let i = 0; i < o.size; i++) row.appendChild(makeBag(o, false))
+
+  // 直播开场：从 DANMAKU.enter 里选两三个弹幕
+  const isFirstOrder = !session.streamStarted
+  if (isFirstOrder) {
+    session.streamStarted = true
+    const enterCount = Math.floor(Math.random() * 2) + 2 // 2 或 3 个
+    spawnDanmaku(DANMAKU.enter, enterCount, 150)
+  }
+
+  // 新的一单：从 DANMAKU.order 里选三四个弹幕
+  const orderCount = Math.floor(Math.random() * 2) + 3 // 3 或 4 个
+  const orderDelay = isFirstOrder ? 850 : 200
+  spawnDanmaku(DANMAKU.order, orderCount, orderDelay)
 }
 
 function makeBag(o, bonus) {
@@ -246,7 +317,7 @@ function openOne(bagEl) {
       mover.innerHTML = `<div class="bag-body"><span class="bag-miss">缺货</span></div>`
       sfx.bad()
       spawnDanmaku(DANMAKU.stockout, 2)
-      floatText(mover, '缺货 -2 评价', '#FF5A5A')
+      spawnLiveNotice('warn', '缺货', '缺货 · 评价 -2')
       bagEl.remove()
       checkPhase(queue)
       return
@@ -261,7 +332,7 @@ function openOne(bagEl) {
     const r = RARITIES[ev.design.rarity]
     mover.innerHTML = `
       <div class="bag-reveal rc-${ev.design.rarity}">
-        <span class="br-ic">${icon(ev.design.cat, 20)}</span>
+        <span class="br-ic">${icon(ev.design, 20)}</span>
         <span class="br-name">${ev.design.name}</span>
         <i class="coin-dot" style="--cc:${COINS[ev.coin].hex}">${COINS[ev.coin].name}</i>
       </div>`
@@ -269,26 +340,26 @@ function openOne(bagEl) {
     else if (ev.design.rarity === 'epic') sfx.rare()
     else sfx.coin()
     const rect = mover.getBoundingClientRect()
+    let hasSpecialDm = false
     if (ev.design.rarity === 'epic' || ev.design.rarity === 'legendary') {
       burst(rect.left + rect.width / 2, rect.top + rect.height / 2, [r.color, '#FFF'], 16)
-      spawnDanmaku(ev.design.rarity === 'legendary' ? DANMAKU.legendary : DANMAKU.epic, 3)
-      floatText(mover, `${r.name}·${ev.design.name}`, r.color, true)
+      spawnDanmaku(ev.design.rarity === 'legendary' ? DANMAKU.legendary : DANMAKU.epic, 2)
+      spawnLiveNotice('rare', r.name, ev.design.name)
+      hasSpecialDm = true
     }
     if (ev.styleHit) {
-      floatText(mover, '风向款！粉丝 +1', '#7DE2D1', true)
+      spawnLiveNotice('trend', '爆款', '风向款！粉丝 +1')
       spawnDanmaku(['风向款拆到了！', '就是这个！买爆！'], 2)
+      hasSpecialDm = true
     }
     if (ev.luckyHit) {
       sfx.coin()
-      floatText(mover, '订单色 +1 袋', COINS[ev.coin].hex)
+      spawnLiveNotice('bag', '+1袋', `订单色加持 · ${COINS[ev.coin].name}`, `<i class="coin-dot sm" style="--cc:${COINS[ev.coin].hex}">${COINS[ev.coin].name}</i>`)
       spawnDanmaku(DANMAKU.lucky, 2)
+      hasSpecialDm = true
     }
-    if (ev.dailyBuff) {
-      floatText(mover, `今日幸运·${ev.dailyBuff.name} ${ev.dailyBuff.desc}`, '#FF7EB6', true)
-      spawnDanmaku(['今日幸运色！buff来了！'], 2)
-      sfx.coin()
-      if (ev.dailyBuff.key === 'heat') { session.heat += 10; updateHeat() }
-      renderBuffs()
+    if (!hasSpecialDm && Math.random() < 0.8) {
+      spawnDanmaku(DANMAKU.generic, 1)
     }
 
     // 饰品入首饰盒（同款合并 ×N）
@@ -321,7 +392,7 @@ function renderBoxItems() {
     ? '<span class="lv-empty">空</span>'
     : orderIds.map((id) => {
       const it = byId[id]
-      return `<span class="box-jewel rc-${it.d.rarity}${it.style ? ' style-hit' : ''}">${icon(it.d.cat, 14)}${it.d.name}${it.n > 1 ? ` ×${it.n}` : ''}</span>`
+      return `<span class="box-jewel rc-${it.d.rarity}${it.style ? ' style-hit' : ''}">${icon(it.d, 14)}${it.d.name}${it.n > 1 ? ` ×${it.n}` : ''}</span>`
     }).join('')
 }
 
@@ -390,11 +461,14 @@ function checkPhase(queue) {
   if (ctx.queue > 0 || pending > 0) return
 
   // 全拆完 → 统一结算对对碰：弹窗展示一共几对，点继续再飞币回流
-  const paired = resolvePairs(session.order, ctx)
+  const s = getState()
+  const paired = resolvePairs(s, session.order, ctx)
   if (paired.length > 0) {
-    // 蓝币对碰：热度 +1/对
-    const bluePairs = paired.filter((k) => k === 'blue').length
-    if (bluePairs > 0) { session.heat += bluePairs; updateHeat() }
+    // 蓝币对碰且为今日幸运色：热度 +1/对
+    const luckyKey = s.trend.lucky
+    const blueLuckyPairs = paired.filter((k) => k === 'blue' && k === luckyKey).length
+    if (blueLuckyPairs > 0) { session.heat += blueLuckyPairs; updateHeat() }
+    renderBuffs()
     showPairModal(paired, queue)
     return
   }
@@ -405,30 +479,42 @@ function checkPhase(queue) {
 // 对对碰结算弹窗：列出每一对的颜色与效果；木盘被完全清空时触发「清盘」奖励
 function showPairModal(paired, queue) {
   const ctx = session.ctx
+  const s = getState()
+  const luckyKey = s.trend.lucky
   // 清盘：本轮对碰后所有颜色都不剩零散单枚，木盘全空
   const cleared = COIN_KEYS.every((k) => !(ctx.tally[k] || 0))
   if (cleared) ctx.queue += 3 // 清盘奖励：另加三袋盲袋
-  const rows = paired.map((k, i) => `
-    <div class="pair-row">
+  const luckyPairs = paired.filter((k) => k === luckyKey)
+  const rows = paired.map((k, i) => {
+    const isLucky = (k === luckyKey)
+    return `
+    <div class="pair-row ${isLucky ? 'is-lucky' : ''}">
       <span class="pair-idx">${i + 1}</span>
       <i class="coin-dot sm" style="--cc:${COINS[k].hex}">${COINS[k].name}</i>
-      <span class="pair-eff">${COINS[k].pair}</span>
-    </div>`).join('')
+      <span class="pair-eff ${isLucky ? 'is-lucky' : ''}">${isLucky ? `✨ 幸运色触发：${COINS[k].pair} + 加拆1袋` : '加拆 1 袋'}</span>
+    </div>`
+  }).join('')
   const { close } = openModal(`
     <h3 class="m-title">对对碰 × ${paired.length}</h3>
     <div class="pair-list">${rows}</div>
     ${cleared ? '<div class="clear-banner">🎉 清盘！另加三袋盲袋</div>' : ''}
-    <p class="pair-note">本轮加拆 ${ctx.queue} 袋${cleared ? '' : '；配对成功的硬币已收走，没凑成对的原地留着等下一轮'}</p>
+    <p class="pair-note">本轮加拆 ${ctx.queue} 袋${luckyPairs.length ? `；触发 ${luckyPairs.length} 次今日幸运色 buff！` : ''}${cleared ? '' : '；配对成功的硬币已收走，没凑成对的原地留着等下一轮'}</p>
     <button class="btn btn-primary btn-big" id="pairGo">继续拆袋</button>
   `, { closable: false })
   sfx.pair()
-  if (cleared) sfx.legendary()
+  if (cleared || luckyPairs.length) sfx.legendary()
   spawnDanmaku(DANMAKU.pair, 3)
+  if (luckyPairs.length) spawnDanmaku(['幸运色碰成了！', '欧气爆发！', '专属buff生效！'], 2)
   if (cleared) spawnDanmaku(['清盘了！！', '木盘都被碰空了！', '这就是欧皇吗'], 3)
   document.getElementById('pairGo').onclick = () => {
     sfx.tap()
     close()
     fadeOutPairedCoins(paired)
+    if (luckyPairs.length) {
+      spawnLiveNotice('buff', '幸运对碰', `${COINS[luckyKey].name}币对碰 · ${COINS[luckyKey].pair}`)
+    }
+    spawnLiveNotice('pair', '对碰', `对碰 ×${paired.length} · 加拆 ${ctx.queue} 袋`)
+    if (cleared) spawnLiveNotice('buff', '清盘', '木盘全空！另加三袋')
     for (let i = 0; i < ctx.queue; i++) queue.appendChild(makeBag(session.order, true))
   }
 }
@@ -448,6 +534,7 @@ function renderExtra(queue) {
       session.ctx.queue++
       queue.appendChild(makeBag(session.order, true))
       sfx.tap()
+      spawnLiveNotice('bag', '保底', `保底机制 · 补拆一袋`)
       extra.innerHTML = ''
     }
     extra.appendChild(btn)
@@ -506,7 +593,7 @@ function completeOrder(stage) {
         ${r.buffPart ? `<div><span>buff 加成</span><b class="hv-fans">+¥${r.buffPart}</b></div>` : ''}
         <div><span>营收</span><b class="hv-earn">+¥${r.price}</b></div>
         <div><span>粉丝</span><b class="hv-fans">+${r.fans}</b></div>
-        ${session.ctx.pairs ? `<div><span>对对碰</span><b>${session.ctx.pairs} 次</b></div>` : ''}
+        ${session.ctx.pairs ? `<div><span>对对碰</span><b class="hv-base">${session.ctx.pairs} 次</b></div>` : ''}
       </div>
       <button class="btn btn-primary btn-big" id="hvNext">下一单</button>
     </div>`, { closable: false })

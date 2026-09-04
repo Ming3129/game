@@ -1,0 +1,6 @@
+{
+  "name": "今夜拆什么 · 饰品盲袋直播间",
+  "description": "今夜拆什么 · 饰品盲袋直播间，开播饰品对对碰与经营模拟游戏",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -5,20 +5,60 @@ import { RARITIES, tierOf, nextTier } from './data.js'
 import { sfx, setMuted } from './fx.js'
 import { rollGemMarket, rollShop, rollTrendStyle } from './engine.js'
 import { saveNow } from './save.js'
-import { renderDay } from './ui-day.js'
-import { renderLive, renderSettle, clearLiveTimers } from './ui-live.js'
+import { renderDay } from './ui_day.js'
+import { renderLive, renderSettle, clearLiveTimers } from './ui_live.js'
 
 export const app = () => document.getElementById('app')
 
-// ---------- 品类线性图标 ----------
+// ---------- 品类与品质线性图标 ----------
 const ICON_PATHS = {
   ring: '<circle cx="12" cy="14.5" r="5.5"/><path d="M9.5 6.5 12 4l2.5 2.5L12 9z"/>',
   necklace: '<path d="M4.5 4c.8 6.5 3.6 9.5 7.5 9.5S18.7 10.5 19.5 4"/><circle cx="12" cy="17" r="2.4"/>',
   bracelet: '<circle cx="12" cy="12" r="7" stroke-dasharray="2.4 3"/><circle cx="12" cy="5" r="1.7"/>',
   earring: '<path d="M12 3v3.5"/><circle cx="12" cy="8.5" r="1.4"/><path d="M12 11c-2.4 1.6-3.4 3.4-3.4 4.9a3.4 3.4 0 0 0 6.8 0c0-1.5-1-3.3-3.4-4.9z"/>',
 }
-export function icon(cat, size = 22) {
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[cat] || ''}</svg>`
+
+// 细分等级（品质）图标：各品类随品质提升（普通、稀有、史诗、传说、限定）呈现由简至奢的不同外观
+const ICON_RARITY_PATHS = {
+  ring: {
+    common:    '<circle cx="12" cy="14" r="5.5"/><rect x="10" y="7" width="4" height="2" rx="0.5"/>',
+    rare:      '<circle cx="12" cy="14.5" r="5.5"/><path d="M9.5 6.5 12 4l2.5 2.5L12 9z"/><path d="M9.5 6.5h5"/>',
+    epic:      '<circle cx="12" cy="15" r="5"/><path d="M8 7.5 12 3l4 4.5-4 3.5z"/><line x1="8" y1="7.5" x2="16" y2="7.5"/><line x1="12" y1="3" x2="12" y2="11"/><path d="M5.5 5.5 7 7m11.5-1.5L17 7"/>',
+    legendary: '<circle cx="12" cy="15.5" r="4.8"/><path d="M7 8.5 9 5.5l3-2.5 3 2.5 2 3-5 3.5z"/><path d="M9 5.5h6"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor"/><path d="M4 10.5l2.5-1m13.5 1-2.5-1"/>',
+    limited:   '<circle cx="12" cy="15" r="5"/><path d="M12 2l1.8 3.2L17 6l-3.2 1.8L12 11l-1.8-3.2L7 6l3.2-.8z"/><circle cx="12" cy="6" r="1.2" fill="currentColor"/><path d="M4.5 9.5l2 1m13-1-2 1"/>',
+  },
+  necklace: {
+    common:    '<path d="M4.5 5c.8 6 3.5 9 7.5 9s6.7-3 7.5-9"/><circle cx="12" cy="17" r="2.2"/><path d="M12 14v1"/>',
+    rare:      '<path d="M4.5 4.5c.8 6.5 3.6 9.5 7.5 9.5s6.7-3 7.5-9.5"/><path d="M12 14v1.5"/><path d="M12 15.5c-2 2-2 3.5-1 4.5 1 1 3 1 4 0 1-1 1-2.5-1-4.5z"/><circle cx="12" cy="18" r="0.8" fill="currentColor"/>',
+    epic:      '<path d="M5 4c.6 5 3.2 8 7 8s6.4-3 7-8"/><path d="M7.5 4c.5 6 2.2 9.5 4.5 9.5s4-3.5 4.5-9.5"/><path d="M12 13.5v2"/><path d="M12 15.5l2.2 2.2-2.2 3.3-2.2-3.3z"/><path d="M10 17.7h4"/>',
+    legendary: '<path d="M4 4c1 7 4 10.5 8 10.5s7-3.5 8-10.5"/><path d="M12 14.5v1.5"/><path d="M8.5 18l3.5-3 3.5 3-3.5 4.5z"/><circle cx="12" cy="18" r="1.3" fill="currentColor"/><circle cx="7" cy="10" r="1.2" fill="currentColor"/><circle cx="17" cy="10" r="1.2" fill="currentColor"/>',
+    limited:   '<path d="M4 4.5c.8 6.5 3.6 9.5 8 9.5s7.2-3 8-9.5"/><path d="M12 14v1.5"/><path d="M8.5 19c0-2.8 3.5-6 3.5-6s3.5 3.2 3.5 6a3.5 3.5 0 0 1-7 0z"/><circle cx="12" cy="18.5" r="1.2" fill="currentColor"/><path d="M3.5 12l2 1m15-1-2 1M12 21.5v2"/>',
+  },
+  bracelet: {
+    common:    '<circle cx="12" cy="12" r="7" stroke-dasharray="2 2.5"/><circle cx="12" cy="5" r="1.6"/>',
+    rare:      '<circle cx="12" cy="11.5" r="6.8"/><path d="M12 18.3v2.2"/><circle cx="12" cy="22" r="1.5"/><path d="M6 9.5l-1.5-1m13.5 1 1.5-1"/>',
+    epic:      '<ellipse cx="12" cy="12" rx="7.5" ry="5.5"/><ellipse cx="12" cy="12" rx="5.5" ry="7.5" stroke-dasharray="3 2"/><circle cx="12" cy="4.5" r="1.6" fill="currentColor"/><circle cx="12" cy="19.5" r="1.6" fill="currentColor"/><path d="M4.5 12h2m11 0h2"/>',
+    legendary: '<path d="M6.5 15.5A7 7 0 1 1 17.5 15.5"/><path d="M5.5 14l2 2-2 2m13-4-2 2 2 2"/><circle cx="12" cy="5" r="2.2"/><circle cx="12" cy="5" r="0.9" fill="currentColor"/><path d="M9 7.5 7.5 9m7.5-1.5 1.5 1.5"/>',
+    limited:   '<circle cx="12" cy="12" r="7"/><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/><path d="M12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/><path d="M5 7.5l2 1m10-1-2 1M5 16.5l2-1m10 1-2-1"/>',
+  },
+  earring: {
+    common:    '<path d="M12 3.5v4"/><circle cx="12" cy="7.5" r="1.5"/><path d="M12 9v3"/><circle cx="12" cy="15" r="3"/>',
+    rare:      '<path d="M12 3v3.5"/><circle cx="12" cy="8" r="1.5"/><path d="M12 10c-2.5 1.8-3.5 3.5-3.5 5.2a3.5 3.5 0 0 0 7 0c0-1.7-1-3.4-3.5-5.2z"/><circle cx="12" cy="14.5" r="1" fill="currentColor"/>',
+    epic:      '<path d="M12 3v2.5"/><circle cx="12" cy="7" r="1.3"/><path d="M12 8.5 8.5 13l3.5 4.5 3.5-4.5z"/><path d="M8.5 13h7"/><path d="M12 17.5v3.5"/><circle cx="12" cy="22" r="1" fill="currentColor"/>',
+    legendary: '<path d="M12 3a2.5 2.5 0 0 0-2.5 2.5v2a2.5 2.5 0 0 0 5 0v-2A2.5 2.5 0 0 0 12 3z"/><circle cx="12" cy="11.5" r="1.2" fill="currentColor"/><path d="M7 14.5l5-2 5 2-2.5 5.5-2.5 2.5-2.5-2.5z"/><path d="M9.5 16.5h5"/><path d="M12 18.5v3.5"/>',
+    limited:   '<path d="M12 3v3"/><circle cx="12" cy="8" r="1.5"/><path d="M12 10.5v1.5"/><path d="M12 12l2.8 2.8-2.8 4.2-2.8-4.2z"/><path d="M9.2 14.8h5.6"/><path d="M5.5 15l2 .5m9-.5 2 .5"/><circle cx="12" cy="15" r="1" fill="currentColor"/>',
+  }
+}
+
+export function icon(catOrDesign, size = 22, rarity = null) {
+  let cat = catOrDesign
+  let r = rarity
+  if (typeof catOrDesign === 'object' && catOrDesign !== null) {
+    cat = catOrDesign.cat
+    r = r || catOrDesign.rarity
+  }
+  const path = (r && ICON_RARITY_PATHS[cat]?.[r]) || ICON_PATHS[cat] || ''
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`
 }
 
 // ---------- 通用：饰品卡片 ----------
@@ -27,7 +67,7 @@ export function designCard(d, { count, locked, sub } = {}) {
   const name = locked ? '？？？' : d.name
   const subText = sub ?? `${r.name}${count != null ? ` · 库存 ${count}` : ''}`
   return `<div class="dcard rc-${d.rarity}${locked ? ' locked' : ''}">
-    <div class="dcard-ic">${icon(d.cat, 24)}</div>
+    <div class="dcard-ic">${icon(d, 24)}</div>
     <div class="dcard-nm">${name}</div>
     <div class="dcard-sub">${subText}</div>
   </div>`
@@ -60,6 +100,14 @@ export function openModal(inner, { closable = true } = {}) {
   return { el: mask, close }
 }
 
+// ---------- 音效状态图标 ----------
+export function volumeIcon(muted, size = 16) {
+  if (muted) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>`
+  }
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`
+}
+
 // ---------- 顶栏 ----------
 function buildTopbar(s) {
   const tier = tierOf(s.fans)
@@ -74,14 +122,14 @@ function buildTopbar(s) {
     <div class="tb-right">
       <span class="tb-money">¥ <b>${s.money}</b></span>
       <span class="tb-fans" title="${nt ? `距${nt.name}还差 ${nt.fans - s.fans} 粉` : '已满级'}">粉丝 <b>${s.fans}</b></span>
-      <button class="tb-btn" data-act="mute" title="音效">${s.muted ? '🔇' : '🔊'}</button>
+      <button class="tb-btn" data-act="mute" title="音效">${volumeIcon(s.muted)}</button>
       <button class="tb-btn" data-act="help" title="玩法">?</button>
     </div>`
   el.querySelector('[data-act="mute"]').onclick = function () {
     const muted = !getState().muted
     setMuted(muted)
     setState({ muted })
-    this.textContent = muted ? '🔇' : '🔊'
+    this.innerHTML = volumeIcon(muted)
     sfx.tap()
   }
   el.querySelector('[data-act="help"]').onclick = () => showHelp()
@@ -124,7 +172,7 @@ function renderIntro(root) {
                   : '<button class="btn btn-primary btn-big" data-act="new">开业！</button>'}
       </div>
       <div class="intro-tips">
-        <span>🪙 对对碰</span><span>💎 限定镶嵌</span>
+        <span>对对碰</span><span>限定镶嵌</span>
       </div>
     </div>`
   root.querySelectorAll('[data-act]').forEach((b) => {

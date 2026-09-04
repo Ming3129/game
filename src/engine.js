@@ -1,10 +1,10 @@
 // 游戏引擎：开盒、装袋、直播订单与对对碰、下播结算。纯规则层，不碰 DOM。
 import {
-  DESIGNS, RARITIES, BOXES, BOX_KEYS, COIN_KEYS, CAT_KEYS,
+  DESIGNS, RARITIES, BOXES, BOX_KEYS, COINS, COIN_KEYS, CAT_KEYS,
   tierOf, GEMS, GEM_PRICE_MIN, GEM_PRICE_MAX, GEM_MARKET_SIZE,
   LIMITED_ORDER_BASE, LIMITED_FAN_BONUS, ORDER_BASE, ORDER_PER_BAG,
   TREND_MULT, EVAL_LEVELS, UNLOCK_GRANT, designById,
-  STREAMS_PER_DAY, LUCKY_BUFF_BY_COLOR,
+  STREAMS_PER_DAY,
 } from './data.js'
 import { freshStats } from './state.js'
 
@@ -166,9 +166,8 @@ export function newOrderSession(order) {
   return {
     queue: order.type === 'bags' ? order.size : 0,
     tally: {},          // 本单内各色硬币计数（拆完后统一对碰）
-    redMult: 0,         // 红币对碰累计加价
-    greenMult: 0,       // 绿币对碰累计本单收入加成
-    dailyRev: 0,        // 今日幸运色 buff 累计营收加成
+    redMult: 0,         // 红币对碰累计加价（为今日幸运色时生效）
+    greenMult: 0,       // 绿币对碰累计加价（为今日幸运色时生效）
     styleFans: 0,       // 风向指定款式拆中数（每件粉丝 +1）
     opened: [],         // 已拆 { design, coin, slot: 'order'|'bonus'|'stockout' }
     buffs: [],          // 本单触发的 buff（供展示）
@@ -178,7 +177,7 @@ export function newOrderSession(order) {
   }
 }
 
-// 拆一袋：返回事件 { slot, design?, coin?, bonus, luckyHit, dailyBuff?, styleHit? }；硬币只记账，对碰由 resolvePairs 统一结算
+// 拆一袋：返回事件 { slot, design?, coin?, bonus, luckyHit, styleHit? }；硬币只记账，对碰由 resolvePairs 统一结算
 export function openBag(s, order, ctx) {
   if (ctx.done || ctx.queue <= 0) return null
   ctx.queue--
@@ -197,7 +196,7 @@ export function openBag(s, order, ctx) {
   const design = designById(bag.a)
   const coin = bag.c
   ctx.opened.push({ slot: isBonus ? 'bonus' : 'order', design, coin })
-  const ev = { slot: isBonus ? 'bonus' : 'order', design, coin, bonus: isBonus, luckyHit: false, dailyBuff: null }
+  const ev = { slot: isBonus ? 'bonus' : 'order', design, coin, bonus: isBonus, luckyHit: false }
 
   // 稀有度统计（评价分只算紫币加成，史诗/传说单独计数）
   if (design.rarity === 'epic' || design.rarity === 'legendary') {
@@ -220,25 +219,17 @@ export function openBag(s, order, ctx) {
     ev.luckyHit = true
   }
 
-  // 今日幸运色：触发该颜色专属 buff（与订单幸运色可同色，两者都触发）
-  if (coin === s.trend.lucky) {
-    const buff = LUCKY_BUFF_BY_COLOR[coin]
-    ev.dailyBuff = buff
-    ctx.buffs.push(buff)
-    if (buff.key === 'rev') ctx.dailyRev += 0.3
-    else if (buff.key === 'fan') ctx.goldFans += 30
-    else if (buff.key === 'bag') ctx.queue++
-    else if (buff.key === 'eval') ctx.evalScore += 2
-    // key === 'heat' 的热度 buff 由界面处理（热度是场次临时态）
-  }
-
   // 硬币只记账，对对碰延后到拆完全部队列统一结算（见 resolvePairs）
   ctx.tally[coin] = (ctx.tally[coin] || 0) + 1
   return ev
 }
 
-// 拆完全部队列后统一结算对对碰：所有颜色同时配对、不限对数；返回本次成对的颜色序列（供 UI 淡出），加袋写回 ctx.queue
-export function resolvePairs(order, ctx) {
+// 拆完全部队列后统一结算对对碰：所有颜色同时配对、不限对数；每对统一加拆一袋；若对对碰硬币颜色为今日幸运色，则触发该色专属 buff
+export function resolvePairs(sOrOrder, orderOrCtx, maybeCtx) {
+  const s = maybeCtx ? sOrOrder : null
+  const order = maybeCtx ? orderOrCtx : sOrOrder
+  const ctx = maybeCtx ? maybeCtx : orderOrCtx
+  const luckyColor = s?.trend?.lucky
   const paired = []
   let guard = 0
   while (guard++ < 1000) {
@@ -249,12 +240,15 @@ export function resolvePairs(order, ctx) {
         ctx.tally[k] = n - 2
         ctx.pairs++
         ctx.queue++ // 每对统一加拆一袋
-        switch (k) {
-          case 'red': ctx.redMult += 0.15; break
-          case 'gold': ctx.goldFans += 8; break
-          case 'purple': ctx.goldFans += 2; break
-          case 'green': ctx.greenMult += 0.05; break
-          // blue：热度由界面处理（热度是场次临时态）
+        if (luckyColor && k === luckyColor) {
+          switch (k) {
+            case 'red': ctx.redMult += 0.10; break
+            case 'gold': ctx.goldFans += 5; break
+            case 'purple': ctx.goldFans += 2; break
+            case 'green': ctx.greenMult += 0.05; break
+            // blue：热度由界面处理（热度是场次临时态）
+          }
+          ctx.buffs.push({ key: k, name: `${COINS[k].name}币对碰`, desc: COINS[k].pair })
         }
         paired.push(k)
         hit = true
@@ -284,10 +278,11 @@ export function finishOrder(s, order, ctx) {
   const nBags = order.size // 初始盲袋数量（不含对碰加拆）
   const trendHit = order.cat === s.trend.cat
   if (trendHit) s.stats.trendHits++
-  // 原本金额 = (10 + 初始袋数×2) × 风向品类加成 × 红币对碰
-  const rawBase = (ORDER_BASE + nBags * ORDER_PER_BAG) * (trendHit ? TREND_MULT : 1) * (1 + ctx.redMult + ctx.greenMult)
+  // 基础金额 = (10 + 初始袋数×2) × 风向品类加成
+  const rawBase = (ORDER_BASE + nBags * ORDER_PER_BAG) * (trendHit ? TREND_MULT : 1)
   const base = Math.round(rawBase)
-  const price = Math.round(rawBase * (1 + ctx.dailyRev))
+  // 本单结算金额 = 基础金额 × (1 + 幸运红/绿币对碰加成)
+  const price = Math.round(rawBase * (1 + ctx.redMult + ctx.greenMult))
   const fans = Math.round((5 + ctx.opened.filter((o) => o.design).length * 2 + ctx.pairs * 5) * tierOf(s.fans).fanMult) + ctx.goldFans + (ctx.styleFans || 0)
   s.money += price
   s.fans += fans
