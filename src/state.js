@@ -9,12 +9,13 @@ export function freshState() {
     day: 1,
     money: 1000,
     fans: 100,
-    trend: { cat: 'ring', lucky: 'red', style: null }, // 每日风向：流行品类 + 幸运色 + 指定款式（可为空）
+    trend: { cat: 'ring', lucky: 'red', style: 'ring_c1', saleStyle: 'ring_c1', saleDiscount: 0.5 }, // 每日风向：流行品类 + 幸运色 + 指定款式 + 今日特价款式（5折）
     streamsLeft: STREAMS_PER_DAY, // 今日剩余开播场次
     stock: {},        // designId -> 库存数量
     codex: [],        // 已解锁款式 id
     codexBonus: [],   // 已发放整类集齐奖励的品类
     packed: {},       // cat -> [{ a: designId, c: coinKey }] 已装袋待售
+    heldOrders: [],   // 保留到下一场直播的订单 [{ type: 'bags', cat, size, lucky, held: true }]
     vault: [],        // 限定饰品 { uid, designId, gem, price }
     gems: [],         // 待镶嵌宝石 { gem, price }
     shop: [],         // 今日商店盲盒 { cat, tier, sold }（每天随机刷新）

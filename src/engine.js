@@ -4,7 +4,7 @@ import {
   tierOf, GEMS, GEM_PRICE_MIN, GEM_PRICE_MAX, GEM_MARKET_SIZE,
   LIMITED_ORDER_BASE, LIMITED_FAN_BONUS, ORDER_BASE, ORDER_PER_BAG,
   TREND_MULT, EVAL_LEVELS, UNLOCK_GRANT, designById,
-  STREAMS_PER_DAY,
+  STREAMS_PER_DAY, getCoinPairEffect,
 } from './data.js'
 import { freshStats } from './state.js'
 
@@ -30,10 +30,11 @@ function rollRarity(odds) {
 // ---------- 开盲盒 ----------
 
 // 开一箱某品类的盲盒；返回 { ok, cost, items }，items: [{ design, isNew, grant }]
-export function rollBox(s, cat, tierKey) {
-  const box = BOXES[tierKey]
-  if (s.money < box.price) return { ok: false, reason: 'money' }
-  s.money -= box.price
+export function rollBox(s, cat, tierKey = 'SSS') {
+  const box = BOXES[tierKey] || BOXES.SSS
+  const price = box?.price || 50
+  if (s.money < price) return { ok: false, reason: 'money' }
+  s.money -= price
   const items = []
   for (const slot of box.slots) {
     for (let i = 0; i < slot.n; i++) {
@@ -65,14 +66,19 @@ function checkCodexBonus(s, cat) {
   }
 }
 
-// 商店单件补货
+// 商店单件补货（支持根据风向随机出现的今日特价款）
 export function buyStock(s, designId, n = 1) {
   const d = designById(designId)
-  const price = RARITIES[d.rarity].unitPrice * n
+  let unitP = RARITIES[d.rarity].unitPrice
+  if (s.trend && s.trend.saleStyle === designId) {
+    const discount = s.trend.saleDiscount || 0.5
+    unitP = Math.max(1, Math.round(unitP * discount))
+  }
+  const price = unitP * n
   if (s.money < price) return { ok: false, reason: 'money' }
   s.money -= price
   s.stock[designId] = (s.stock[designId] || 0) + n
-  return { ok: true, cost: price }
+  return { ok: true, cost: price, unitPrice: unitP }
 }
 
 // ---------- 装袋 ----------
@@ -131,19 +137,37 @@ export function autoPick(s, cat, n) {
 
 // ---------- 直播 ----------
 
+// 预设单主昵称池
+const BUYER_NAMES = [
+  '芝芝桃桃', '欧气满满', '小猫打呼噜', '星河碎碎冰', '今天不熬夜',
+  '奶糖泡泡', '草莓大福', '追光的小鹿', '橘子汽水', '可可脆脆',
+  '软绵绵的云', '暴富小锦鲤', '啵啵奶茶', '咸蛋黄泡芙', 'momo',
+  '甜甜圈圈', '柠檬气泡', '月亮邮局', '薄荷小调', '落日飞车'
+]
+
 // 生成整场直播的订单计划：品类纯随机（从有货品类中抽），保底一单为当日风向品类
 export function planStream(s) {
   const tier = tierOf(s.fans)
   const orders = []
   // 限定专场：有库存限定饰品时，作为第一单
   if (s.vault.length > 0) {
-    orders.push({ type: 'limited', item: s.vault[0] })
+    const buyerId = String(Math.floor(1000 + Math.random() * 9000))
+    orders.push({ type: 'limited', item: s.vault[0], buyerId, buyerName: 'VIP限定买家' })
+  }
+  // 之前花费 50 块保留的订单，优先放入本场直播
+  if (Array.isArray(s.heldOrders) && s.heldOrders.length > 0) {
+    orders.push(...s.heldOrders.map((ho) => ({
+      ...ho,
+      buyerId: ho.buyerId || String(Math.floor(1000 + Math.random() * 9000)),
+      buyerName: ho.buyerName || pick(BUYER_NAMES),
+    })))
+    s.heldOrders = []
   }
   const stocked = CAT_KEYS.filter((k) => (s.packed[k] || []).length > 0)
   if (stocked.length === 0) return orders
-  let capLeft = tier.cap
-  const count = randInt(tier.orders[0], tier.orders[1])
-  let trendDone = false // 风向保底单
+  let capLeft = tier.cap - orders.filter((o) => o.type === 'bags').reduce((sum, o) => sum + (o.size || 0), 0)
+  const count = Math.max(0, randInt(tier.orders[0], tier.orders[1]) - orders.filter((o) => o.type === 'bags').length)
+  let trendDone = orders.some((o) => o.type === 'bags' && o.cat === s.trend.cat) // 风向保底单
   for (let i = 0; i < count && capLeft > 0; i++) {
     let cat
     if (!trendDone && (s.packed[s.trend.cat] || []).length > 0) {
@@ -155,8 +179,10 @@ export function planStream(s) {
     const size = Math.min(randInt(tier.bags[0], tier.bags[1]), capLeft, (s.packed[cat] || []).length + 3)
     if (size <= 0) continue
     capLeft -= size
-    // 订单幸运色每单随机（可与今日幸运色相同）
-    orders.push({ type: 'bags', cat, size, lucky: pick(COIN_KEYS) })
+    const buyerId = String(Math.floor(1000 + Math.random() * 9000))
+    const buyerName = pick(BUYER_NAMES)
+    // 订单幸运色每单随机（可与今日幸运色相同），带单主ID与昵称
+    orders.push({ type: 'bags', cat, size, lucky: pick(COIN_KEYS), buyerId, buyerName })
   }
   return orders
 }
@@ -166,40 +192,51 @@ export function newOrderSession(order) {
   return {
     queue: order.type === 'bags' ? order.size : 0,
     tally: {},          // 本单内各色硬币计数（拆完后统一对碰）
-    redMult: 0,         // 红币对碰累计加价（为今日幸运色时生效）
-    greenMult: 0,       // 绿币对碰累计加价（为今日幸运色时生效）
+    moneyMult: 0,       // 动态对碰收入加成（今日幸运色生效）
+    redMult: 0,         // 兼容字段
+    greenMult: 0,       // 兼容字段
     styleFans: 0,       // 风向指定款式拆中数（每件粉丝 +1）
     opened: [],         // 已拆 { design, coin, slot: 'order'|'bonus'|'stockout' }
     buffs: [],          // 本单触发的 buff（供展示）
     pairs: 0, luckyHits: 0, stockouts: 0,
     goldFans: 0, evalScore: 0,
+    heatAdd: 0,         // 热度加成
     done: false,
   }
 }
 
 // 拆一袋：返回事件 { slot, design?, coin?, bonus, luckyHit, styleHit? }；硬币只记账，对碰由 resolvePairs 统一结算
 export function openBag(s, order, ctx) {
-  if (ctx.done || ctx.queue <= 0) return null
-  ctx.queue--
+  if (ctx.done) return null
+  if (ctx.queue > 0) ctx.queue--
   const isBonus = ctx.opened.length >= order.size
   const bags = s.packed[order.cat] || []
+  let design = null
+  let coin = null
+
   if (bags.length === 0) {
-    // 缺货：奖励袋静默消失，正式袋记缺货
     if (!isBonus) {
+      // 订单正式袋缺货
       ctx.stockouts++
       ctx.opened.push({ slot: 'stockout' })
       return { slot: 'stockout' }
+    } else {
+      // 奖励加拆袋/保底袋：库存拆空时现场现拆任意该品类款式与随机硬币，避免空袋卡死对对碰与保底流程
+      const pool = DESIGNS.filter((d) => d.cat === order.cat && d.rarity !== 'limited')
+      design = pool.length > 0 ? pick(pool) : DESIGNS[0]
+      coin = pick(COIN_KEYS)
     }
-    return { slot: 'void' }
+  } else {
+    const bag = bags.shift()
+    design = designById(bag.a)
+    coin = bag.c
   }
-  const bag = bags.shift()
-  const design = designById(bag.a)
-  const coin = bag.c
+
   ctx.opened.push({ slot: isBonus ? 'bonus' : 'order', design, coin })
   const ev = { slot: isBonus ? 'bonus' : 'order', design, coin, bonus: isBonus, luckyHit: false }
 
   // 稀有度统计（评价分只算紫币加成，史诗/传说单独计数）
-  if (design.rarity === 'epic' || design.rarity === 'legendary') {
+  if (design && (design.rarity === 'epic' || design.rarity === 'legendary')) {
     if (!s.stats.bestPull || RARITIES[design.rarity].bonus > RARITIES[s.stats.bestPull.rarity].bonus) {
       s.stats.bestPull = { rarity: design.rarity, name: design.name }
     }
@@ -207,7 +244,7 @@ export function openBag(s, order, ctx) {
   }
 
   // 风向指定款式：拆中一件粉丝 +1
-  if (s.trend.style && design.id === s.trend.style) {
+  if (design && s.trend.style && design.id === s.trend.style) {
     ctx.styleFans = (ctx.styleFans || 0) + 1
     ev.styleHit = true
   }
@@ -219,9 +256,45 @@ export function openBag(s, order, ctx) {
     ev.luckyHit = true
   }
 
+  // 小隐藏：直接加一袋盲袋
+  if (coin === 'secret_s') {
+    ctx.queue++
+    ev.isSecretSmall = true
+  }
+
+  // 大隐藏：自选款式触发
+  if (coin === 'secret_b') {
+    ev.isSecretBig = true
+  }
+
   // 硬币只记账，对对碰延后到拆完全部队列统一结算（见 resolvePairs）
-  ctx.tally[coin] = (ctx.tally[coin] || 0) + 1
+  if (coin) {
+    ctx.tally[coin] = (ctx.tally[coin] || 0) + 1
+  }
   return ev
+}
+
+// 单次对对碰结算：扣除2枚对应颜色硬币，并触发幸运色buff与加拆
+export function resolveSinglePair(s, order, ctx, colorKey) {
+  const luckyColor = s?.trend?.lucky
+  ctx.tally[colorKey] = (ctx.tally[colorKey] || 0) - 2
+  ctx.pairs++
+  ctx.queue++ // 每对统一加拆一袋
+  let isLucky = false
+  if (luckyColor && colorKey === luckyColor) {
+    isLucky = true
+    const eff = getCoinPairEffect(colorKey)
+    if (eff.type === 'moneyMult') {
+      ctx.moneyMult = (ctx.moneyMult || 0) + eff.val
+    } else if (eff.type === 'fans') {
+      ctx.goldFans = (ctx.goldFans || 0) + eff.val
+    } else if (eff.type === 'heat') {
+      ctx.heatAdd = (ctx.heatAdd || 0) + eff.val
+    }
+    const colorLabel = colorKey.startsWith('secret') ? COINS[colorKey].name : `${COINS[colorKey].name}色`
+    ctx.buffs.push({ key: colorKey, name: `${colorLabel}对碰`, desc: COINS[colorKey].pair })
+  }
+  return { colorKey, isLucky }
 }
 
 // 拆完全部队列后统一结算对对碰：所有颜色同时配对、不限对数；每对统一加拆一袋；若对对碰硬币颜色为今日幸运色，则触发该色专属 buff
@@ -229,7 +302,6 @@ export function resolvePairs(sOrOrder, orderOrCtx, maybeCtx) {
   const s = maybeCtx ? sOrOrder : null
   const order = maybeCtx ? orderOrCtx : sOrOrder
   const ctx = maybeCtx ? maybeCtx : orderOrCtx
-  const luckyColor = s?.trend?.lucky
   const paired = []
   let guard = 0
   while (guard++ < 1000) {
@@ -237,19 +309,7 @@ export function resolvePairs(sOrOrder, orderOrCtx, maybeCtx) {
     for (const k of COIN_KEYS) {
       const n = ctx.tally[k] || 0
       if (n >= 2) {
-        ctx.tally[k] = n - 2
-        ctx.pairs++
-        ctx.queue++ // 每对统一加拆一袋
-        if (luckyColor && k === luckyColor) {
-          switch (k) {
-            case 'red': ctx.redMult += 0.10; break
-            case 'gold': ctx.goldFans += 5; break
-            case 'purple': ctx.goldFans += 2; break
-            case 'green': ctx.greenMult += 0.05; break
-            // blue：热度由界面处理（热度是场次临时态）
-          }
-          ctx.buffs.push({ key: k, name: `${COINS[k].name}币对碰`, desc: COINS[k].pair })
-        }
+        resolveSinglePair(s, order, ctx, k)
         paired.push(k)
         hit = true
       }
@@ -281,9 +341,10 @@ export function finishOrder(s, order, ctx) {
   // 基础金额 = (10 + 初始袋数×2) × 风向品类加成
   const rawBase = (ORDER_BASE + nBags * ORDER_PER_BAG) * (trendHit ? TREND_MULT : 1)
   const base = Math.round(rawBase)
-  // 本单结算金额 = 基础金额 × (1 + 幸运红/绿币对碰加成)
-  const price = Math.round(rawBase * (1 + ctx.redMult + ctx.greenMult))
-  const fans = Math.round((5 + ctx.opened.filter((o) => o.design).length * 2 + ctx.pairs * 5) * tierOf(s.fans).fanMult) + ctx.goldFans + (ctx.styleFans || 0)
+  // 本单结算金额 = 基础金额 × (1 + 幸运币对碰加成)
+  const totalMult = (ctx.moneyMult || 0) + (ctx.redMult || 0) + (ctx.greenMult || 0)
+  const price = Math.round(rawBase * (1 + totalMult))
+  const fans = Math.round((5 + ctx.opened.filter((o) => o.design).length * 2 + ctx.pairs * 5) * tierOf(s.fans).fanMult) + (ctx.goldFans || 0) + (ctx.styleFans || 0)
   s.money += price
   s.fans += fans
   s.stats.earn += price
@@ -346,7 +407,7 @@ export function settleDay(s, { isLastStream = false } = {}) {
   s.fans += fanBonus
   s.stats.settledFans = s.stats.fansToday
   let mercy = false
-  if (isLastStream && s.money < BOXES.S.price && totalStockAll(s) === 0) {
+  if (isLastStream && s.money < (BOXES.SSS?.price || 50) && totalStockAll(s) === 0) {
     s.money += 150
     mercy = true
   }
@@ -360,15 +421,34 @@ function totalStockAll(s) {
   return n
 }
 
-// 进入下一天：日期+1、重掷风向（固定带款式）与商店/宝石市场、恢复场次、清空当日统计
+// 进入下一天：日期+1、重掷风向（固定带款式与根据风向决定的今日特价款）与商店/宝石市场、恢复场次、清空当日统计
 export function nextDay(s) {
   s.day++
   const cat = pick(CAT_KEYS)
-  s.trend = { cat, lucky: pick(COIN_KEYS), style: rollTrendStyle(s, cat) }
+  const style = rollTrendStyle(s, cat)
+  const saleStyle = rollSaleStyle(s, cat, style)
+  s.trend = {
+    cat,
+    lucky: pick(COIN_KEYS),
+    style,
+    saleStyle,
+    saleDiscount: 0.5, // 5折今日特价
+  }
   s.streamsLeft = STREAMS_PER_DAY
   s.stats = null
   s.shop = rollShop(s)
   rollGemMarket(s)
+}
+
+// 随机出现今日特价款式：根据当日风向品类决定，优先选取已解锁款式方便进货享受5折特惠
+export function rollSaleStyle(s, cat, trendStyle) {
+  const unlocked = DESIGNS.filter((d) => d.cat === cat && d.rarity !== 'limited' && (s?.codex || []).includes(d.id))
+  if (unlocked.length > 0 && Math.random() < 0.75) {
+    return pick(unlocked).id
+  }
+  const pool = DESIGNS.filter((d) => d.cat === cat && d.rarity !== 'limited')
+  if (pool.length === 0) return trendStyle
+  return pick(pool).id
 }
 
 // 风向固定指定一款该品类款式（全库可选，未解锁的作为「目标款式」展示）
@@ -377,12 +457,19 @@ export function rollTrendStyle(s, cat) {
   return pool.length > 0 ? pick(pool).id : null
 }
 
-// 每日商店：随机 5 盒盲盒（保底 2 盒风向品类），买完即售罄
+// 每日盲盒机：随机出现 10 个盲盒（全随机各品类），盲盒等级均为 SSS，每个定价 50，买完即售罄
 export function rollShop(s) {
   const offers = []
-  for (let i = 0; i < 2; i++) offers.push({ cat: s.trend.cat, tier: pick(BOX_KEYS), sold: false })
-  for (let i = 0; i < 3; i++) offers.push({ cat: pick(CAT_KEYS), tier: pick(BOX_KEYS), sold: false })
-  return offers
+  for (let i = 0; i < 10; i++) {
+    offers.push({
+      cat: pick(CAT_KEYS),
+      tier: 'SSS',
+      price: 50,
+      sold: false,
+    })
+  }
+  // 赋予机位编号
+  return offers.map((o, idx) => ({ ...o, slot: idx + 1 }))
 }
 
 export { freshStats }

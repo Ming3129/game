@@ -1,7 +1,7 @@
 
 // UI 骨架：屏幕路由、顶栏、弹窗/轻提示、通用卡片组件。
 import { getState, setState, subscribe, freshState, snapshot } from './state.js'
-import { RARITIES, tierOf, nextTier } from './data.js'
+import { RARITIES, tierOf, nextTier, ENABLE_GEM_CHANNEL } from './data.js'
 import { sfx, setMuted } from './fx.js'
 import { rollGemMarket, rollShop, rollTrendStyle } from './engine.js'
 import { saveNow } from './save.js'
@@ -97,7 +97,7 @@ export function openModal(inner, { closable = true } = {}) {
   if (closable) {
     mask.addEventListener('click', (e) => { if (e.target === mask) close() })
   }
-  return { el: mask, close }
+  return { el: mask, root: mask, close }
 }
 
 // ---------- 音效状态图标 ----------
@@ -151,7 +151,7 @@ function showHelp() {
       <p><b>白天</b>：商店买盲盒（开出新款式解锁图鉴并入库 10 件）→ 装袋：每袋 1 件饰品 + 1 枚硬币，单色硬币不超过总数的40%。</p>
       <p><b>直播</b>：粉丝数量制定订单数量。拆袋时——拆到<b>幸运色</b>硬币多拆一袋；同色硬币<b>凑成对</b>触发「对对碰」：多拆一袋 + 增效。木盘全部碰空还有「清盘」奖励三袋。</p>
       <p><b>下播</b>：按订单结算收入，观众评价影响粉丝加成。当日风向品类订单收入 + 50%。</p>
-      <p><b>后期</b>：1万粉解锁宝石市场，买宝石镶嵌限定饰品，直接上架直播间卖高价。</p>
+      ${ENABLE_GEM_CHANNEL ? '<p><b>后期</b>：1万粉就能解锁宝石市场，每日随机刷新宝石，镶嵌限定饰品，直接上架直播间。</p>' : ''}
     </div>
     <button class="btn btn-primary m-close">知道了</button>
   `, { closable: true }).el.querySelector('.m-close').onclick = function () { this.closest('.modal-mask').classList.remove('show'); setTimeout(() => this.closest('.modal-mask').remove(), 220) }
@@ -186,7 +186,7 @@ function renderIntro(root) {
         setState({ ...fresh, screen: 'day', dayTab: 'shop' })
       } else {
         const s2 = getState()
-        if (!Array.isArray(s2.shop) || s2.shop.length === 0) s2.shop = rollShop(s2)
+        if (!Array.isArray(s2.shop) || s2.shop.length !== 10) s2.shop = rollShop(s2)
         if (!s2.trend.style) s2.trend.style = rollTrendStyle(s2, s2.trend.cat)
         setState({ screen: 'day', dayTab: 'shop' })
       }

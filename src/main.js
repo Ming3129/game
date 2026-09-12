@@ -1,7 +1,7 @@
 // 入口：连接平台 SDK，读档或开新档，挂载界面。
 import { initStore, freshState, getState, snapshot } from './state.js'
 import { bindSdk, load, saveNow } from './save.js'
-import { rollGemMarket, rollShop, rollTrendStyle } from './engine.js'
+import { rollGemMarket, rollShop, rollTrendStyle, rollSaleStyle } from './engine.js'
 import { mount } from './ui.js'
 import { setMuted } from './fx.js'
 import { STREAMS_PER_DAY } from './data.js'
@@ -17,25 +17,36 @@ function migrate(s) {
     cat: s.trend?.cat || 'ring',
     lucky: s.trend?.lucky || 'red',
     style: s.trend?.style ?? null,
+    saleStyle: s.trend?.saleStyle ?? null,
+    saleDiscount: s.trend?.saleDiscount || 0.5,
   }
-  // 旧档没有风向款式时补掷一个，保证「1 品类 2 款式」始终可见
+  // 旧档没有风向款式或特价款式时补掷，保证款式补货特价始终可见
   if (!s.trend.style) s.trend.style = rollTrendStyle(s, s.trend.cat)
+  if (!s.trend.saleStyle) s.trend.saleStyle = rollSaleStyle(s, s.trend.cat, s.trend.style)
   if (!Array.isArray(s.codex)) s.codex = []
   if (!Array.isArray(s.codexBonus)) s.codexBonus = []
   if (!Array.isArray(s.vault)) s.vault = []
   if (!Array.isArray(s.gems)) s.gems = []
+  if (Array.isArray(s.shop)) {
+    s.shop.forEach((o) => {
+      if (o) o.tier = 'SSS'
+    })
+  }
   if (typeof s.stock !== 'object' || !s.stock) s.stock = {}
   if (typeof s.packed !== 'object' || !s.packed) s.packed = {}
+  if (!Array.isArray(s.heldOrders)) s.heldOrders = []
   return s
 }
 
 async function main() {
   let sdk = null
-  try {
-    sdk = await GameSDK.init()
-    console.log('[game] ready, gameId =', sdk.context.gameId)
-  } catch (e) {
-    console.warn('[game] SDK init failed, running in local fallback', e)
+  if (typeof GameSDK !== 'undefined' && GameSDK?.init) {
+    try {
+      sdk = await GameSDK.init()
+      console.log('[game] ready, gameId =', sdk.context?.gameId)
+    } catch (e) {
+      console.warn('[game] SDK init failed, running in local fallback', e)
+    }
   }
   bindSdk(sdk)
 
@@ -47,7 +58,7 @@ async function main() {
     s = migrate(s)
   }
   if (!Array.isArray(s.gems) || s.gems.length === 0) rollGemMarket(s)
-  if (!Array.isArray(s.shop) || s.shop.length === 0) s.shop = rollShop(s)
+  if (!Array.isArray(s.shop) || s.shop.length !== 10) s.shop = rollShop(s)
   setMuted(!!s.muted)
   initStore(s)
 
