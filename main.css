@@ -1270,15 +1270,16 @@ b { font-weight: 700; }
 .db-info b { color: var(--ink-dim); }
 .btn-live { flex: 1; }
 .btn-nextday { flex: none; padding: 9px 14px; }
-.nd-note { font-size: var(--fs-s); color: var(--ink-dim); margin-bottom: var(--sp-4); }
-.nd-btns { display: flex; gap: var(--sp-2); }
-.nd-btns .btn { flex: 1; }
+/*下一天*/
+.nd-note { font-size: var(--fs-s); color: var(--white); margin-bottom: var(--sp-4); }
+.nd-btns { display: flex; gap: var(--sp-2); color: var(--white); }
+.nd-btns .btn { flex: 1; color: var(--white); }
 
 /* ---------- 直播 ---------- */
 .live-wrap { flex: 1; display: flex; flex-direction: column; min-height: 100dvh; position: relative; overflow-x: hidden; padding-bottom: 58px; }
 .live-head {
   display: flex; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4); font-size: var(--fs-s); z-index: 5;
+  padding: var(--sp-3) var(--sp-4); font-size: var(--fs-xs); z-index: 5;
 }
 .live-dot {
   width: 9px; height: 9px; border-radius: 50%; background: var(--red);
@@ -1673,11 +1674,11 @@ b { font-weight: 700; }
   border-top: 2px solid var(--line);
   z-index: 25;
 }
-.live-foot b { color: var(--pink-deep); margin-left: 3px; }
-.live-foot span:nth-child(4) b { color: var(--pink-deep); }
-.btn-end { border: 1px solid var(--line); color: var(--pink-deep); background: rgba(255, 255, 255, 0.4); }
+.live-foot b {font-size: var(--fs-xs); color: var(--pink-deep); margin-left: 3px; }
+.live-foot span:nth-child(4) b {font-size: var(--fs-xs); color: var(--pink-deep); }
+.btn-end {font-size: var(--fs-xs); border: 1px solid var(--line); color: var(--pink-deep); background: rgba(255, 255, 255, 0.4); }
 .btn-end:active { background: rgba(255, 255, 255, 0.7); }
-.live-count { font-size: 10px; color: var(--ink-dim); border: 1px solid rgba(125, 226, 209, 0.3); border-radius: 999px; padding: 1px 7px; }
+.live-count { font-size: 9px; color: var(--ink-dim); border: 1px solid rgba(125, 226, 209, 0.3); border-radius: 999px; padding: 1px 7px; }
 .oc-btns { display: flex; gap: var(--sp-2); }
 .oc-btns .btn-big { flex: 1; }
 .oc-btns .btn-ghost { flex: none; padding: 9px 14px; }

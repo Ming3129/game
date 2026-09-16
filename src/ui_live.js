@@ -106,7 +106,7 @@ function updateHeat() {
   const num = document.getElementById('heatNum')
   const wrap = document.getElementById('heatWrap')
   if (!num || !wrap) return
-  num.textContent = `${session.heat} / ${s.fans}`
+  num.textContent = `${session.heat}`
   wrap.classList.toggle('hot', session.heat > s.fans)
 }
 
@@ -198,7 +198,7 @@ function openPickBagsModal(order, onReady) {
     <div class="pick-bags-modal">
       <div class="pbm-head">
         <div class="pbm-title-wrap">
-          <h3 class="m-title" style="margin-bottom:2px;">📦 接单备货 · 自选上台盲袋</h3>
+          <h3 class="m-title" style="margin-bottom:2px;">📦 接单备货</h3>
           <span class="pbm-buyer-tag">单主 <b>${order.buyerName || '神秘顾客'}</b></span>
         </div>
       </div>

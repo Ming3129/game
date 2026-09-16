@@ -80,7 +80,7 @@ function confirmNextDay(s) {
     <h3 class="m-title">进入下一天？</h3>
     <p class="nd-note">未卖完的盲袋会保留到明天；风向${ENABLE_GEM_CHANNEL ? '、今日盲盒与宝石市场' : '与今日盲盒'}将刷新。</p>
     <div class="nd-btns">
-      <button class="btn btn-ghost" id="ndCancel">再播一天</button>
+      <button class="btn btn-ghost" id="ndCancel">留在当天</button>
       <button class="btn btn-primary" id="ndOk">确认</button>
     </div>`, { closable: true })
   document.getElementById('ndCancel').onclick = () => { sfx.tap(); close() }
