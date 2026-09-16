@@ -233,8 +233,8 @@ export const LIMITED_FAN_BONUS = 50     // 售出限定饰品粉丝奖励
 export const GEM_MARKET_FANS = 10000    // 宝石市场解锁粉丝数
 export const ENABLE_GEM_CHANNEL = false // 暂时关闭宝石通道
 
-// 订单定价：10 + 初始盲袋数×2，命中风向 ×1.5，幸运红/绿币对碰分别 +10%/+5%
-export const ORDER_BASE = 10
+// 订单定价：15 + 初始盲袋数×3，命中风向 ×1.5，幸运红/绿币对碰分别 +10%/+5%
+export const ORDER_BASE = 15
 export const ORDER_PER_BAG = 3 // 按订单初始袋数计
 export const TREND_MULT = 1.5
 

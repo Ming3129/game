@@ -455,7 +455,8 @@ function nextOrder(stage) {
   const stock = (s.packed[o.cat] || []).length
   const orderNum = session.idx + (session.orders[0]?.type === 'limited' ? 0 : 1)
 
-  if (stock === 0) {
+  if (stock < o.size) {
+    const isZero = stock === 0
     stage.innerHTML = `
       <div class="order-card stockout-order">
         <div class="oc-tag ${trendHit ? 'hot' : ''}">
@@ -472,12 +473,12 @@ function nextOrder(stage) {
             <b>${CATS[o.cat].name}盲袋 × ${o.size}</b>
             <span>保底 ${GUARANTEE_MIN} 袋 · 拆完统一对对碰</span>
             <div class="oc-stock empty">
-              当前${CATS[o.cat].name}库存：<b>0 袋</b> <span class="oc-stock-badge">已缺货</span>
+              当前${CATS[o.cat].name}库存：<b>${stock} 袋</b> <span class="oc-stock-badge">${isZero ? '已缺货' : '库存不足'}</span>
             </div>
           </div>
           <div class="oc-price">预估 <b>¥${est}</b></div>
         </div>
-        <p class="oc-warn-tip">该品类盲袋已无库存！可跳过此单，或花 ¥50 保留至下场直播进货后再拆。</p>
+        <p class="oc-warn-tip">${isZero ? '该品类盲袋已无库存！' : `该品类盲袋库存不足（需要 ${o.size} 袋，现仅有 ${stock} 袋）！`}可跳过此单，或花 ¥50 保留至下场直播进货后再拆。</p>
         <div class="oc-btns oc-btns-empty">
           <button class="btn btn-ghost" id="ocSkipOrder">跳过订单</button>
           <button class="btn btn-primary" id="ocHoldOrder" ${s.money < 50 ? 'disabled' : ''}>花 ¥50 保留到下场</button>
@@ -678,7 +679,7 @@ function openOne(bagEl) {
       sfx.coin()
       const colorLabel = ev.coin.startsWith('secret') ? COINS[ev.coin].name : `${COINS[ev.coin].name}色`
       spawnLiveNotice('bag', '+1袋', `订单色加持 · ${colorLabel}`)
-      spawnBuyerDanmaku('哇！命中我的订单幸运色！加拆一袋！', 200)
+      spawnBuyerDanmaku('哇！我的订单幸运色！加拆一袋！', 200)
       spawnDanmaku(DANMAKU.lucky, 2)
       hasSpecialDm = true
       // 幸运色命中直接补加一袋入待拆区，避免异步相减时序产生偏差
@@ -1194,7 +1195,7 @@ function showPairModal(paired, queue) {
     }
     const pairColors = [...new Set(paired.map(toColorName))].join('、')
     spawnLiveNotice('pair', '对碰', `${pairColors} · 加拆 ${ctx.queue} 袋`)
-    if (cleared) spawnLiveNotice('buff', '清盘', '木盘全空！另加三袋')
+    if (cleared) spawnLiveNotice('buff', '清盘', '另加三袋！')
     for (let i = 0; i < ctx.queue; i++) queue.appendChild(makeBag(session.order, true))
   }
 }

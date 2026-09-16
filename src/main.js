@@ -40,21 +40,25 @@ function migrate(s) {
 
 async function main() {
   let sdk = null
-  if (typeof GameSDK !== 'undefined' && GameSDK?.init) {
+  const globalGameSDK = (typeof GameSDK !== 'undefined' ? GameSDK : (typeof window !== 'undefined' ? window.GameSDK : null))
+  if (globalGameSDK?.init) {
     try {
-      sdk = await GameSDK.init()
-      console.log('[game] ready, gameId =', sdk.context?.gameId)
+      sdk = await globalGameSDK.init()
+      console.log('[game] ready, gameId =', sdk?.context?.gameId)
     } catch (e) {
       console.warn('[game] SDK init failed, running in local fallback', e)
     }
+  } else if (typeof window !== 'undefined' && window.sdk?.storage) {
+    sdk = window.sdk
   }
   bindSdk(sdk)
 
   // 读档：有档则恢复经营数据，回到开场屏由玩家选择继续或重开
   let s = freshState()
   const data = await load()
-  if (data && typeof data.day === 'number') {
-    s = { ...s, ...data, screen: 'intro', stats: null }
+  const hasLoadedArchive = !!(data && typeof data.day === 'number')
+  if (hasLoadedArchive) {
+    s = { ...s, ...data, screen: 'intro', stats: null, hasSavedData: true }
     s = migrate(s)
   }
   if (!Array.isArray(s.gems) || s.gems.length === 0) rollGemMarket(s)
@@ -62,8 +66,10 @@ async function main() {
   setMuted(!!s.muted)
   initStore(s)
 
-  // 关键节点自动存档（结算/开播时由界面触发，这里兜底存一份初始档）
-  saveNow(snapshot(getState()))
+  // 关键节点自动存档：若已有读档则同步一次迁移后的最新结构；首次纯新启动不提前覆盖外部存档
+  if (hasLoadedArchive) {
+    saveNow(snapshot(getState()))
+  }
   mount()
 }
 

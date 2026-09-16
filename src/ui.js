@@ -4,7 +4,7 @@ import { getState, setState, subscribe, freshState, snapshot } from './state.js'
 import { RARITIES, tierOf, nextTier, ENABLE_GEM_CHANNEL } from './data.js'
 import { sfx, setMuted } from './fx.js'
 import { rollGemMarket, rollShop, rollTrendStyle } from './engine.js'
-import { saveNow } from './save.js'
+import { saveNow, clearSave } from './save.js'
 import { renderDay } from './ui_day.js'
 import { renderLive, renderSettle, clearLiveTimers } from './ui_live.js'
 
@@ -146,6 +146,9 @@ export function updateTopbarNumbers(s) {
 function showHelp() {
   sfx.tap()
   openModal(`
+    <div class="help-cover-banner">
+      <img src="./cover.jpg" alt="今夜拆什么" referrerPolicy="no-referrer" />
+    </div>
     <h3 class="m-title">玩法说明</h3>
     <div class="help-body">
       <p><b>白天</b>：商店买盲盒（开出新款式解锁图鉴并入库 10 件）→ 装袋：每袋 1 件饰品 + 1 枚硬币，单色硬币不超过总数的40%。</p>
@@ -160,13 +163,23 @@ function showHelp() {
 // ---------- 开场屏 ----------
 function renderIntro(root) {
   const s = getState()
-  const hasSave = s.day > 1 || s.money !== 1000 || s.codex.length > 0
+  const hasPacked = Object.values(s.packed || {}).some((arr) => Array.isArray(arr) && arr.length > 0)
+  const hasStock = Object.values(s.stock || {}).some((n) => typeof n === 'number' && n > 0)
+  const hasSave = !!s.hasSavedData ||
+    s.day > 1 ||
+    s.money !== 1000 ||
+    (s.codex && s.codex.length > 0) ||
+    hasPacked ||
+    hasStock ||
+    (s.heldOrders && s.heldOrders.length > 0) ||
+    (s.vault && s.vault.length > 0) ||
+    (s.gems && s.gems.length > 0 && s.gems.some((g) => g.bought))
   root.innerHTML = `
     <div class="intro">
       <div class="intro-spot"></div>
       <div class="intro-badge">饰品盲袋 · 经营直播</div>
       <h1 class="intro-title">今夜拆什么</h1>
-      <p class="intro-sub">开播饰品对对碰 </p>
+      <p class="intro-sub">开播饰品对对碰</p>
       <div class="intro-actions">
         ${hasSave ? '<button class="btn btn-primary btn-big" data-act="continue">继续经营</button><button class="btn btn-ghost" data-act="new">重新开店</button>'
                   : '<button class="btn btn-primary btn-big" data-act="new">开业！</button>'}
@@ -176,9 +189,10 @@ function renderIntro(root) {
       </div>
     </div>`
   root.querySelectorAll('[data-act]').forEach((b) => {
-    b.onclick = () => {
+    b.onclick = async () => {
       sfx.buy()
       if (b.dataset.act === 'new') {
+        await clearSave()
         const fresh = freshState()
         rollGemMarket(fresh)
         fresh.shop = rollShop(fresh)
@@ -215,6 +229,10 @@ export function renderScreen() {
 export function refresh() {
   lastKey = ''
   renderScreen()
+  const s = getState()
+  if (s.screen === 'day') {
+    saveNow()
+  }
 }
 
 export function mount() {
@@ -225,6 +243,15 @@ export function mount() {
     lastKey = key
     renderScreen()
   })
+
+  // 页面关闭或切换后台时紧急写盘保底
+  window.addEventListener('beforeunload', () => {
+    saveNow()
+  })
+  window.addEventListener('pagehide', () => {
+    saveNow()
+  })
+
   lastKey = ''
   renderScreen()
 }

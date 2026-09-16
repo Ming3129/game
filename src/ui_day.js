@@ -547,14 +547,14 @@ function playPackModal(cat, n, picks = [], coins = {}) {
   const { close } = openModal(`
     <div class="pack-interactive-stage">
       <div class="pack-header">
-        <b class="pack-title" id="packTitle">亲手装袋</b>
+        <b class="pack-title" id="packTitle">装袋</b>
         <span class="pack-num">${CATS[cat].name}盲袋 × ${n}</span>
-        <p class="pack-guide-hint" id="packGuideHint">拖动饰品与硬币放入彩色自封袋</p>
+        <p class="pack-guide-hint" id="packGuideHint">拖动饰品与硬币放入自封袋</p>
       </div>
 
       <div class="pack-workarea" id="packWorkarea">
         <!-- 弹窗关闭前直接在中央弹出的装袋成功浮层 -->
-        <div class="pack-success-popup" id="packSuccessPopup">🎉 装袋成功！</div>
+        <div class="pack-success-popup" id="packSuccessPopup">装袋成功！</div>
 
         <!-- 左边：咬口式彩色自封盲袋 -->
         <div class="ziplock-bag-col" id="packBagDropzone">
@@ -579,7 +579,7 @@ function playPackModal(cat, n, picks = [], coins = {}) {
                 </div>
               </div>
               <div class="zpb-slide-hint" id="zbSlideHint">
-                <span class="zpb-hint-arrow">👉</span>
+                
                 <span class="zpb-hint-text">从左向右滑动封口</span>
               </div>
             </div>
