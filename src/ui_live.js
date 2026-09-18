@@ -72,27 +72,34 @@ const AUDIENCE_NAMES = [
   '芋泥波波', '雪顶咖啡', '晴天小狗', '乌龙烤奶', '多肉葡萄',
   '浅草微风', '丸子酱', '青提气泡水', '早睡早起', '锦鲤附体',
   '棉花糖', '布丁豆豆', '焦糖布蕾', '快乐小羊', '奶茶续命选手', 
-  '良良'
+  '良良', '小熊软糖', '冰摇红莓', '海盐芝士', '旺仔牛奶',
+  '山楂气泡', '风铃草', '白桃乌龙', '云朵舒芙蕾', '星星糖',
+  '抹茶拿铁', '栗子蛋糕', '小确幸', '偷得浮生', '晚风温柔'
 ]
 
 function getRandomAudience() {
-  const base = AUDIENCE_NAMES[Math.floor(Math.random() * AUDIENCE_NAMES.length)]
-  const id = Math.floor(1000 + Math.random() * 9000)
-  return `${base} [ID: ${id}]`
+  // 本场直播所有订单单主的名字不出现在普通弹幕观众池中
+  const buyerNames = new Set(
+    (session?.orders || []).map((o) => o.buyerName).filter(Boolean)
+  )
+  if (session?.order?.buyerName) buyerNames.add(session.order.buyerName)
+
+  const available = AUDIENCE_NAMES.filter((name) => !buyerNames.has(name))
+  const pool = available.length > 0 ? available : AUDIENCE_NAMES
+  return pool[Math.floor(Math.random() * pool.length)]
 }
 
-// 专属单主弹幕：高亮单主标签与下单ID
+// 专属单主弹幕：高亮单主标签与昵称
 export function spawnBuyerDanmaku(text, delay = 0) {
   const o = session?.order
   if (!o) return
-  const buyerId = o.buyerId || '8888'
   const buyerName = o.buyerName || '单主'
   timers.push(setTimeout(() => {
     const container = document.getElementById('danmaku')
     if (!container) return
     const el = document.createElement('div')
     el.className = 'chat-item chat-item-buyer'
-    el.innerHTML = `<span class="ci-buyer-badge">单主</span><span class="ci-user ci-buyer-name">${buyerName} [ID: ${buyerId}]</span><span class="ci-sep">:</span><span class="ci-text ci-buyer-text">${text}</span>`
+    el.innerHTML = `<span class="ci-buyer-badge">单主</span><span class="ci-user ci-buyer-name">${buyerName}</span><span class="ci-sep">:</span><span class="ci-text ci-buyer-text">${text}</span>`
     container.appendChild(el)
     while (container.children.length > 8) {
       container.removeChild(container.firstChild)
@@ -114,6 +121,10 @@ function updateHeat() {
 function endEarly() {
   const s = getState()
   const stage = document.getElementById('stage')
+  if (session?.order?.trayBags?.length > 0 && session.order.cat) {
+    s.packed[session.order.cat] = [...(s.packed[session.order.cat] || []), ...session.order.trayBags]
+    session.order.trayBags = []
+  }
   if (!session || !session.ctx || session.ctx.done || session.order?.type === 'limited' || !stage) return endStream(stage)
   const r = finishOrder(s, session.order, session.ctx)
   updateTopbarNumbers(s)
@@ -298,8 +309,14 @@ function openPickBagsModal(order, onReady) {
   const autoBtn = mEl.querySelector('#pbmAuto')
   if (autoBtn) {
     autoBtn.onclick = () => {
-      pickedIndices = []
-      for (let i = 0; i < size; i++) pickedIndices.push(i)
+      // 从货架可用盲袋中完全随机挑选 size 个，充分呈现盲选的随机趣味
+      const validIndices = []
+      for (let i = 0; i < availableBags.length; i++) validIndices.push(i)
+      for (let i = validIndices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[validIndices[i], validIndices[j]] = [validIndices[j], validIndices[i]]
+      }
+      pickedIndices = validIndices.slice(0, size).sort((a, b) => a - b)
       sfx.cash()
       updatePickUI()
     }
@@ -319,6 +336,18 @@ function openPickBagsModal(order, onReady) {
     confirmBtn.onclick = () => {
       if (pickedIndices.length < size) return
       sfx.cash()
+
+      // 从 s.packed[cat] 中按所选下标取出真实盲袋放入托盘
+      const sorted = [...pickedIndices].sort((a, b) => b - a)
+      const trayBags = []
+      for (const idx of sorted) {
+        if (idx < (s.packed[cat] || []).length) {
+          trayBags.push(s.packed[cat].splice(idx, 1)[0])
+        }
+      }
+      trayBags.reverse()
+      order.trayBags = trayBags
+
       modal.close()
       onReady()
     }
@@ -331,7 +360,6 @@ function openPickBagsModal(order, onReady) {
 function openSecretDialogueModal(order, ctx, ev, onSelect) {
   const s = getState()
   const cat = order.cat
-  const buyerId = order.buyerId || '8888'
   const buyerName = order.buyerName || '单主'
 
   // 选项1：今日风向爆款
@@ -376,7 +404,7 @@ function openSecretDialogueModal(order, ctx, ev, onSelect) {
         <div class="sdm-crown">👑</div>
         <h3 class="m-title" style="color:var(--deep-wine-red);margin-bottom:4px;">欧气大爆发 · 抽到大隐藏！</h3>
         <p class="sdm-sub">
-          与单主 <b>${buyerName}</b> <span class="sdm-id">[ID: ${buyerId}]</span> 正在直播间连线，请选择话术沟通自选款式：
+          与单主 <b>${buyerName}</b> 正在直播间连线，请选择话术沟通自选款式：
         </p>
       </div>
 
@@ -414,6 +442,10 @@ function openSecretDialogueModal(order, ctx, ev, onSelect) {
 
 function nextOrder(stage) {
   const s = getState()
+  if (session?.order?.trayBags?.length > 0 && session.order.cat) {
+    s.packed[session.order.cat] = [...(s.packed[session.order.cat] || []), ...session.order.trayBags]
+    session.order.trayBags = []
+  }
   session.idx++
   if (session.idx >= session.orders.length) return endStream(stage)
   session.order = session.orders[session.idx]
@@ -430,7 +462,6 @@ function nextOrder(stage) {
         <div class="oc-buyer-bar">
           <span class="oc-buyer-badge">单主</span>
           <b class="oc-buyer-name">${o.buyerName || 'VIP买家'}</b>
-          <span class="oc-buyer-id">[ID: ${o.buyerId}]</span>
         </div>
         <div class="oc-limited">
           <span class="oc-lim-ic">💎</span>
@@ -465,7 +496,6 @@ function nextOrder(stage) {
         <div class="oc-buyer-bar">
           <span class="oc-buyer-badge">单主</span>
           <b class="oc-buyer-name">${o.buyerName || '神秘顾客'}</b>
-          <span class="oc-buyer-id">[ID: ${o.buyerId}]</span>
         </div>
         <div class="oc-main">
           <span class="oc-cat">${icon(o.cat, 30)}</span>
@@ -506,7 +536,6 @@ function nextOrder(stage) {
         size: o.size,
         lucky: o.lucky,
         held: true,
-        buyerId: o.buyerId,
         buyerName: o.buyerName,
       })
       updateTopbarNumbers(s)
@@ -529,7 +558,6 @@ function nextOrder(stage) {
       <div class="oc-buyer-bar">
         <span class="oc-buyer-badge">单主</span>
         <b class="oc-buyer-name">${o.buyerName || '神秘顾客'}</b>
-        <span class="oc-buyer-id">[ID: ${o.buyerId}]</span>
       </div>
       <div class="oc-main">
         <span class="oc-cat">${icon(o.cat, 30)}</span>
@@ -570,10 +598,9 @@ function renderBagArea(stage) {
       <section class="lv-show">
         <div class="lv-tag">展示</div>
         <div class="show-colors">
-          <span class="oc-chip">订单色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> 拆到加一袋</span>
-          <span class="oc-chip dim">今日幸运 <i class="coin-dot sm" style="--cc:${COINS[s.trend.lucky].hex}">${COINS[s.trend.lucky].name}</i> 对碰触发buff</span>
+          <span class="oc-chip" title="拆到此色硬币本单多拆一袋">订单色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i></span>
+          <span class="oc-chip dim" id="lvLuckyColorChip" title="${COINS[s.trend.lucky].name}色硬币对碰：${COINS[s.trend.lucky].pair}">今日幸运色 <i class="coin-dot sm" style="--cc:${COINS[s.trend.lucky].hex}">${COINS[s.trend.lucky].name}</i> <span id="lvLuckyBuffText">${COINS[s.trend.lucky].pair}</span></span>
         </div>
-        <div class="buff-row" id="buffList"></div>
         <div class="lv-mid">
           <div class="lv-box"><div class="lv-panel-title">首饰盒</div><div class="lv-box-items" id="lvBoxItems"><span class="lv-empty">空</span></div></div>
           <div class="lv-tray"><div class="lv-panel-title">木盘</div><div class="lv-tray-coins" id="lvTrayCoins"><span class="lv-empty">空</span></div></div>
@@ -657,13 +684,34 @@ function openOne(bagEl) {
       <div class="bag-reveal rc-${ev.design.rarity}">
         <span class="br-ic">${icon(ev.design, 20)}</span>
         <span class="br-name">${ev.design.name}</span>
-        <i class="coin-dot" style="--cc:${COINS[ev.coin].hex}">${COINS[ev.coin].name}</i>
+        <div class="br-meta">
+          <i class="coin-dot" style="--cc:${COINS[ev.coin].hex}">${COINS[ev.coin].name}</i>
+        </div>
+      </div>
+      <div class="bag-lucky-footer">
+        <span class="br-lucky-val" title="盲袋随机欧气值">欧气 ${ev.luckyVal || 80}</span>
+        ${ev.isCrit ? '<span class="br-crit-tag">★欧气暴击</span>' : ''}
+        ${ev.upgraded ? '<span class="br-upgraded-tag">✨升级款</span>' : ''}
       </div>`
     if (ev.design.rarity === 'legendary') sfx.legendary()
     else if (ev.design.rarity === 'epic') sfx.rare()
     else sfx.coin()
     const rect = mover.getBoundingClientRect()
     let hasSpecialDm = false
+
+    if (ev.isCrit) {
+      spawnLiveNotice('bag', '★ 欧气暴击！', `欧气值 ${ev.luckyVal} · 单主追加小费 +¥15！`)
+      spawnBuyerDanmaku('这袋欧气爆表！值了值了！给主播赏小费！', 200)
+      spawnDanmaku(['欧气大暴击！', '吸欧气吸欧气！', '这手气绝了！'], 2)
+      floatText(mover, '+¥15 小费', '#FFD98E')
+      sfx.cash()
+      hasSpecialDm = true
+    }
+    if (ev.upgraded) {
+      spawnLiveNotice('rare', '✨ 欧气升阶', `金光一闪！款式升级为 ${ev.design.name}！`)
+      spawnDanmaku(['哇直接变异升级？！', '主播手气神了！'], 2)
+      hasSpecialDm = true
+    }
     if (ev.design.rarity === 'epic' || ev.design.rarity === 'legendary') {
       burst(rect.left + rect.width / 2, rect.top + rect.height / 2, [r.color, '#FFF'], 16)
       spawnDanmaku(ev.design.rarity === 'legendary' ? DANMAKU.legendary : DANMAKU.epic, 2)
@@ -718,7 +766,7 @@ function openOne(bagEl) {
 
         sfx.legendary()
         spawnBuyerDanmaku(buyerReply, 50)
-        spawnLiveNotice('rare', '自选达成', `单主 [ID: ${o.buyerId}] 确定选择【${chosenDesign.name}】！`)
+        spawnLiveNotice('rare', '自选达成', `单主 ${o.buyerName || ''} 确定选择【${chosenDesign.name}】！`)
         floatText(active, `大隐藏自选达成！`, '#FF5EC8')
         spawnDanmaku(DANMAKU.secret_b, 2, 300)
         checkPhase(queue)
@@ -807,14 +855,26 @@ function fadeOutPairedCoins(paired) {
   })
 }
 
-// 本单 buff 展示（展示区内追加 chip）
+// 本单 buff 展示（把生效的 buff 状态直接更新到今日幸运色后面）
 function renderBuffs() {
-  const list = document.getElementById('buffList')
-  if (!list) return
-  const buffs = session.ctx.buffs || []
-  list.innerHTML = buffs.length === 0
-    ? ''
-    : buffs.map((b) => `<span class="oc-chip buff">✨ ${b.name}·${b.desc}</span>`).join('')
+  const chip = document.getElementById('lvLuckyColorChip')
+  const textEl = document.getElementById('lvLuckyBuffText')
+  if (!chip || !textEl) return
+  const s = getState()
+  const luckyKey = s?.trend?.lucky
+  const luckyDef = COINS[luckyKey]
+  if (!luckyDef) return
+  const buffs = session?.ctx?.buffs || []
+  const luckyBuffCount = buffs.filter((b) => b.key === luckyKey).length
+  if (luckyBuffCount > 0) {
+    chip.classList.remove('dim')
+    chip.classList.add('active-buff')
+    textEl.innerHTML = `${luckyDef.pair} <b class="buff-count">(已生效×${luckyBuffCount})</b>`
+  } else {
+    chip.classList.add('dim')
+    chip.classList.remove('active-buff')
+    textEl.textContent = luckyDef.pair
+  }
 }
 
 // 同步展示区小木盘硬币（只展示尚未凑成对的零散单枚）
@@ -917,7 +977,7 @@ function startInteractiveTrayMatch(queue) {
           <span class="tm-title">对对碰</span>
           <span class="tm-sub" id="tmSubHint">拖动同色硬币凑对（还可碰 <b id="tmRemainPairs">${initialPairs}</b> 对）</span>
         </div>
-        <button class="btn btn-ghost btn-mini" id="tmQuickMatch" title="自动配对所有同色硬币">⚡ 快速全碰</button>
+        <button class="btn btn-ghost btn-mini" id="tmQuickMatch" title="自动配对所有同色硬币">快速全碰</button>
       </div>
       <div class="tray-plate" id="trayPlate"></div>
     </div>
@@ -1284,6 +1344,10 @@ function completeOrder(stage) {
 
 function endStream(stage) {
   const s = getState()
+  if (session?.order?.trayBags?.length > 0 && session.order.cat) {
+    s.packed[session.order.cat] = [...(s.packed[session.order.cat] || []), ...session.order.trayBags]
+    session.order.trayBags = []
+  }
   s.streamsLeft = Math.max(0, s.streamsLeft - 1)
   // 热度打榜：当场热度 > 粉丝数 → 总粉丝 +5%
   if (session && session.heat > s.fans) {

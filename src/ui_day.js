@@ -16,6 +16,8 @@ import { startLive } from './ui_live.js'
 
 // 装袋草稿（临时态，不入档；按天保留，切页签不丢）。counts: designId -> 数量
 const draft = { day: 0, cat: null, counts: {}, coins: {} }
+// 补货品类折叠状态（按天或页签保留），存储被折叠的品类 key
+const collapsedCats = new Set()
 
 export function renderDay(root) {
   const s = getState()
@@ -146,11 +148,16 @@ function renderShop(body) {
       const bPri = (b.id === s.trend?.saleStyle ? 2 : 0) + (b.id === s.trend?.style ? 1 : 0)
       return bPri - aPri
     })
-    return `<div class="restock-cat">
-      <div class="restock-head">
+    const isCollapsed = collapsedCats.has(cat)
+    return `<div class="restock-cat ${isCollapsed ? 'collapsed' : ''}" data-cat-id="${cat}">
+      <div class="restock-head" data-toggle-cat="${cat}">
         <span class="rc-head-title">
           ${icon(cat, 18)}
           <b>${CATS[cat].name}补货</b>
+        </span>
+        <span class="rc-head-toggle">
+          <span>${list.length} 款</span>
+          <i class="rc-toggle-arrow">▼</i>
         </span>
       </div>
       <div class="restock-list">
@@ -238,6 +245,23 @@ function renderShop(body) {
       if (!offer || offer.sold) return
       if (s.money < (offer.price || 50)) return toast('钱不够啦，单抽需 ¥50', 'warn')
       openBoxModal(offer.cat, offer.tier, offerIdx)
+    }
+  })
+
+  // 补货品类折叠/展开
+  body.querySelectorAll('[data-toggle-cat]').forEach((head) => {
+    head.onclick = (e) => {
+      e.stopPropagation()
+      const catKey = head.dataset.toggleCat
+      const catEl = head.closest('.restock-cat')
+      if (collapsedCats.has(catKey)) {
+        collapsedCats.delete(catKey)
+        catEl?.classList.remove('collapsed')
+      } else {
+        collapsedCats.add(catKey)
+        catEl?.classList.add('collapsed')
+      }
+      sfx.click()
     }
   })
 

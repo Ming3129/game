@@ -83,6 +83,23 @@ export function buyStock(s, designId, n = 1) {
 
 // ---------- 装袋 ----------
 
+// 根据饰品品质计算欧气值：品质越高，欧气值越高
+export function getLuckyValForRarity(rarity) {
+  switch (rarity) {
+    case 'legendary': // 传说：96 ~ 99
+      return randInt(96, 99)
+    case 'epic': // 史诗：88 ~ 95
+      return randInt(88, 95)
+    case 'rare': // 稀有：75 ~ 87
+      return randInt(75, 87)
+    case 'limited': // 限定：95 ~ 99
+      return randInt(95, 99)
+    case 'common': // 普通：50 ~ 74
+    default:
+      return randInt(50, 74)
+  }
+}
+
 // picks: designId 数组（袋内饰品顺序）；coinCounts: { coinKey: 数量 }，总和须等于袋数
 export function packBags(s, cat, picks, coinCounts) {
   const total = picks.length
@@ -106,8 +123,32 @@ export function packBags(s, cat, picks, coinCounts) {
     const j = rand(i + 1)
     ;[coinBag[i], coinBag[j]] = [coinBag[j], coinBag[i]]
   }
-  const bags = picks.map((id, i) => ({ a: id, c: coinBag[i] }))
+  // 洗牌打乱饰品顺序，避免同款连续扎堆
+  const shuffledPicks = [...picks]
+  for (let i = shuffledPicks.length - 1; i > 0; i--) {
+    const j = rand(i + 1)
+    ;[shuffledPicks[i], shuffledPicks[j]] = [shuffledPicks[j], shuffledPicks[i]]
+  }
+  // 装入盲袋：每个盲袋包含对应饰品、硬币颜色，欧气值根据饰品品质确定
+  const bags = shuffledPicks.map((id, i) => {
+    const d = designById(id)
+    return {
+      a: id,
+      c: coinBag[i],
+      r: getLuckyValForRarity(d?.rarity),
+    }
+  })
+  // 再次对盲袋整体乱序
+  for (let i = bags.length - 1; i > 0; i--) {
+    const j = rand(i + 1)
+    ;[bags[i], bags[j]] = [bags[j], bags[i]]
+  }
   s.packed[cat] = [...(s.packed[cat] || []), ...bags]
+  // 货架现有库存整体充分混匀
+  for (let i = s.packed[cat].length - 1; i > 0; i--) {
+    const j = rand(i + 1)
+    ;[s.packed[cat][i], s.packed[cat][j]] = [s.packed[cat][j], s.packed[cat][i]]
+  }
   return { ok: true }
 }
 
@@ -151,14 +192,12 @@ export function planStream(s) {
   const orders = []
   // 限定专场：有库存限定饰品时，作为第一单
   if (s.vault.length > 0) {
-    const buyerId = String(Math.floor(1000 + Math.random() * 9000))
-    orders.push({ type: 'limited', item: s.vault[0], buyerId, buyerName: 'VIP限定买家' })
+    orders.push({ type: 'limited', item: s.vault[0], buyerName: 'VIP限定买家' })
   }
   // 之前花费 50 块保留的订单，优先放入本场直播
   if (Array.isArray(s.heldOrders) && s.heldOrders.length > 0) {
     orders.push(...s.heldOrders.map((ho) => ({
       ...ho,
-      buyerId: ho.buyerId || String(Math.floor(1000 + Math.random() * 9000)),
       buyerName: ho.buyerName || pick(BUYER_NAMES),
     })))
     s.heldOrders = []
@@ -179,10 +218,9 @@ export function planStream(s) {
     const size = Math.min(randInt(tier.bags[0], tier.bags[1]), capLeft, (s.packed[cat] || []).length + 3)
     if (size <= 0) continue
     capLeft -= size
-    const buyerId = String(Math.floor(1000 + Math.random() * 9000))
     const buyerName = pick(BUYER_NAMES)
-    // 订单幸运色每单随机（可与今日幸运色相同），带单主ID与昵称
-    orders.push({ type: 'bags', cat, size, lucky: pick(COIN_KEYS), buyerId, buyerName })
+    // 订单幸运色每单随机（可与今日幸运色相同），带单主昵称
+    orders.push({ type: 'bags', cat, size, lucky: pick(COIN_KEYS), buyerName })
   }
   return orders
 }
@@ -205,16 +243,49 @@ export function newOrderSession(order) {
   }
 }
 
-// 拆一袋：返回事件 { slot, design?, coin?, bonus, luckyHit, styleHit? }；硬币只记账，对碰由 resolvePairs 统一结算
+// 拆一袋：返回事件 { slot, design?, coin?, bonus, luckyHit, styleHit?, luckyVal?, isCrit?, upgraded? }；硬币只记账，对碰由 resolvePairs 统一结算
 export function openBag(s, order, ctx) {
   if (ctx.done) return null
   if (ctx.queue > 0) ctx.queue--
   const isBonus = ctx.opened.length >= order.size
   const bags = s.packed[order.cat] || []
+  let bag = null
+
+  // 1. 如果本单托盘中已有拿取的盲袋，优先从托盘拿取（并进行智能防连抽）
+  if (order.trayBags && order.trayBags.length > 0) {
+    let chosenIdx = 0
+    if (order.trayBags.length > 1 && ctx.opened.length > 0) {
+      const lastDesignId = ctx.opened[ctx.opened.length - 1]?.design?.id
+      if (lastDesignId && order.trayBags[0]?.a === lastDesignId) {
+        const diffIdx = order.trayBags.findIndex((b) => b.a !== lastDesignId)
+        if (diffIdx !== -1) chosenIdx = diffIdx
+      }
+    }
+    bag = order.trayBags.splice(chosenIdx, 1)[0]
+  } else if (bags.length > 0) {
+    // 2. 从货架盲袋库存抽取：完全随机抽取，并进行智能防连抽（避免连续开出完全一样的饰品）
+    let chosenIdx = rand(bags.length)
+    if (bags.length > 1 && ctx.opened.length > 0) {
+      const lastDesignId = ctx.opened[ctx.opened.length - 1]?.design?.id
+      if (lastDesignId && bags[chosenIdx]?.a === lastDesignId) {
+        const diffIdx = bags.findIndex((b) => b.a !== lastDesignId)
+        if (diffIdx !== -1) {
+          const diffIndices = []
+          for (let i = 0; i < bags.length; i++) {
+            if (bags[i].a !== lastDesignId) diffIndices.push(i)
+          }
+          chosenIdx = diffIndices[rand(diffIndices.length)]
+        }
+      }
+    }
+    bag = bags.splice(chosenIdx, 1)[0]
+  }
+
   let design = null
   let coin = null
+  let luckyVal = randInt(50, 100)
 
-  if (bags.length === 0) {
+  if (!bag) {
     if (!isBonus) {
       // 订单正式袋缺货
       ctx.stockouts++
@@ -225,15 +296,32 @@ export function openBag(s, order, ctx) {
       const pool = DESIGNS.filter((d) => d.cat === order.cat && d.rarity !== 'limited')
       design = pool.length > 0 ? pick(pool) : DESIGNS[0]
       coin = pick(COIN_KEYS)
+      luckyVal = getLuckyValForRarity(design?.rarity)
     }
   } else {
-    const bag = bags.shift()
     design = designById(bag.a)
     coin = bag.c
+    luckyVal = getLuckyValForRarity(design?.rarity)
   }
 
-  ctx.opened.push({ slot: isBonus ? 'bonus' : 'order', design, coin })
-  const ev = { slot: isBonus ? 'bonus' : 'order', design, coin, bonus: isBonus, luckyHit: false }
+  // 欧气小惊喜：若开出的是普通款式且运气好（5%），触发款式品质升阶
+  let upgraded = false
+  if (design && design.rarity === 'common' && Math.random() < 0.05) {
+    const higherPool = DESIGNS.filter((d) => d.cat === order.cat && (d.rarity === 'rare' || d.rarity === 'epic'))
+    if (higherPool.length > 0) {
+      design = pick(higherPool)
+      luckyVal = getLuckyValForRarity(design?.rarity)
+      upgraded = true
+    }
+  }
+
+  const isCrit = luckyVal >= 88
+  if (isCrit) {
+    ctx.critBonus = (ctx.critBonus || 0) + 15 // 欧气暴击：单主多给小费 +¥15
+  }
+
+  ctx.opened.push({ slot: isBonus ? 'bonus' : 'order', design, coin, luckyVal, isCrit, upgraded })
+  const ev = { slot: isBonus ? 'bonus' : 'order', design, coin, bonus: isBonus, luckyHit: false, luckyVal, isCrit, upgraded }
 
   // 稀有度统计（评价分只算紫币加成，史诗/传说单独计数）
   if (design && (design.rarity === 'epic' || design.rarity === 'legendary')) {
@@ -341,9 +429,10 @@ export function finishOrder(s, order, ctx) {
   // 基础金额 = (10 + 初始袋数×2) × 风向品类加成
   const rawBase = (ORDER_BASE + nBags * ORDER_PER_BAG) * (trendHit ? TREND_MULT : 1)
   const base = Math.round(rawBase)
-  // 本单结算金额 = 基础金额 × (1 + 幸运币对碰加成)
+  // 本单结算金额 = 基础金额 × (1 + 幸运币对碰加成) + 欧气暴击打赏
   const totalMult = (ctx.moneyMult || 0) + (ctx.redMult || 0) + (ctx.greenMult || 0)
-  const price = Math.round(rawBase * (1 + totalMult))
+  const critPart = ctx.critBonus || 0
+  const price = Math.round(rawBase * (1 + totalMult)) + critPart
   const fans = Math.round((5 + ctx.opened.filter((o) => o.design).length * 2 + ctx.pairs * 5) * tierOf(s.fans).fanMult) + (ctx.goldFans || 0) + (ctx.styleFans || 0)
   s.money += price
   s.fans += fans
@@ -357,7 +446,7 @@ export function finishOrder(s, order, ctx) {
   s.stats.luckyHits += ctx.luckyHits
   s.stats.stockouts += ctx.stockouts
   s.stats.fansToday += fans
-  return { price, fans, trendHit, base, buffPart: price - base }
+  return { price, fans, trendHit, base, buffPart: price - base, critBonus: critPart }
 }
 
 // ---------- 宝石市场 ----------

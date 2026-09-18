@@ -179,13 +179,13 @@ function renderIntro(root) {
       <div class="intro-spot"></div>
       <div class="intro-badge">饰品盲袋 · 经营直播</div>
       <h1 class="intro-title">今夜拆什么</h1>
-      <p class="intro-sub">开播饰品对对碰</p>
+      <p class="intro-sub">直播饰品对对碰</p>
       <div class="intro-actions">
         ${hasSave ? '<button class="btn btn-primary btn-big" data-act="continue">继续经营</button><button class="btn btn-ghost" data-act="new">重新开店</button>'
                   : '<button class="btn btn-primary btn-big" data-act="new">开业！</button>'}
       </div>
       <div class="intro-tips">
-        <span>对对碰</span><span>限定镶嵌</span>
+        <span>快乐拆拆</span><span>对对碰</span>
       </div>
     </div>`
   root.querySelectorAll('[data-act]').forEach((b) => {

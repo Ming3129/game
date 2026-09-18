@@ -1,10 +1,10 @@
 // 入口：连接平台 SDK，读档或开新档，挂载界面。
 import { initStore, freshState, getState, snapshot } from './state.js'
 import { bindSdk, load, saveNow } from './save.js'
-import { rollGemMarket, rollShop, rollTrendStyle, rollSaleStyle } from './engine.js'
+import { rollGemMarket, rollShop, rollTrendStyle, rollSaleStyle, getLuckyValForRarity } from './engine.js'
 import { mount } from './ui.js'
 import { setMuted } from './fx.js'
-import { STREAMS_PER_DAY } from './data.js'
+import { STREAMS_PER_DAY, designById } from './data.js'
 
 // 旧档迁移：补齐新版本字段、修正越界/非有限数值，避免 undefined 参与运算产生 NaN
 function migrate(s) {
@@ -34,6 +34,22 @@ function migrate(s) {
   }
   if (typeof s.stock !== 'object' || !s.stock) s.stock = {}
   if (typeof s.packed !== 'object' || !s.packed) s.packed = {}
+  else {
+    // 为既有存档中的盲袋按饰品品质补齐/纠正欧气值并整体打乱
+    for (const cat of Object.keys(s.packed)) {
+      if (Array.isArray(s.packed[cat])) {
+        for (let i = 0; i < s.packed[cat].length; i++) {
+          const item = s.packed[cat][i]
+          const d = designById(item.a)
+          item.r = getLuckyValForRarity(d?.rarity)
+        }
+        for (let i = s.packed[cat].length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[s.packed[cat][i], s.packed[cat][j]] = [s.packed[cat][j], s.packed[cat][i]]
+        }
+      }
+    }
+  }
   if (!Array.isArray(s.heldOrders)) s.heldOrders = []
   return s
 }
