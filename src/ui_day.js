@@ -18,6 +18,8 @@ import { startLive } from './ui_live.js'
 const draft = { day: 0, cat: null, counts: {}, coins: {} }
 // 款式补货品类展开状态：默认全部折叠，记录被用户主动展开的品类 key
 const expandedCats = new Set()
+// 装袋面板选饰品与配硬币折叠状态（默认折叠）
+const packCollapsed = { designs: true, coins: true }
 
 export function renderDay(root) {
   const s = getState()
@@ -29,6 +31,8 @@ export function renderDay(root) {
     draft.cat = null
     draft.counts = {}
     draft.coins = {}
+    packCollapsed.designs = true
+    packCollapsed.coins = true
   }
   // 兜底：商店为空或不是 10 盒时当场补齐/重掷，保证盲盒机始终有 10 个机位
   if (!Array.isArray(s.shop) || s.shop.length !== 10) s.shop = rollShop(s)
@@ -292,7 +296,7 @@ function renderShop(body) {
         expandedCats.add(catKey)
         catEl?.classList.remove('collapsed')
       }
-      sfx.click()
+      sfx.tap()
     }
   })
 
@@ -463,7 +467,7 @@ function openBoxModal(cat, tierKey = 'SSS', offerIdx = null) {
 function renderPack(body) {
   const s = getState()
   const heldNotice = (s.heldOrders && s.heldOrders.length > 0)
-    ? `<div class="held-pack-notice">📌 <b>有 ${s.heldOrders.length} 个保留订单</b> 待下一场开播：${s.heldOrders.map((ho) => `${CATS[ho.cat].name} ×${ho.size}袋`).join('、')}，请记得装袋备货！</div>`
+    ? `<div class="held-pack-notice"><b>有 ${s.heldOrders.length} 个保留订单</b> 待下一场开播：${s.heldOrders.map((ho) => `${CATS[ho.cat].name} ×${ho.size}袋`).join('、')}，请记得装袋备货！</div>`
     : ''
   body.innerHTML = heldNotice + `<p class="pack-hint">每袋装 <b>1 件饰品 + 1 枚硬币</b>。自由匹配硬币。</p>` +
     CAT_KEYS.map((cat) => {
@@ -484,9 +488,14 @@ function renderPack(body) {
     b.onclick = () => {
       sfx.tap()
       const cat = b.dataset.cat
+      const isSwitching = draft.cat !== cat
       draft.cat = draft.cat === cat ? null : cat
       draft.counts = {}
       draft.coins = {}
+      if (isSwitching) {
+        packCollapsed.designs = true
+        packCollapsed.coins = true
+      }
       renderTab(body.closest('.tab-body'))
     }
   })
@@ -552,16 +561,48 @@ function packPanel(s, cat) {
       `<button class="coin-added" data-rmcoin="${k}" title="点一下取回一枚"><i class="coin-dot sm" style="--cc:${COINS[k].hex}">${COINS[k].name}</i></button>`)
   ).join('')
   const ready = n > 0 && coinSum === n
+  const desOpen = !packCollapsed.designs
+  const coinOpen = !packCollapsed.coins
+
   return `<div class="pack-panel">
-    <div class="pp-sec"><label>选饰品（每款用 ± 调数量）</label>
-      <div class="pack-rows">${rows || '<span class="empty-hint">该品类还没有解锁款式，先去进货</span>'}</div>
-      ${n ? `<span class="pp-count">共 ${n} 袋</span>` : ''}
+    <div class="pp-sec ${desOpen ? 'open' : 'collapsed'}">
+      <div class="pp-sec-head" data-toggle-sec="designs">
+        <div class="pp-sec-title">
+          <i class="arr">${desOpen ? '▾' : '▸'}</i>
+          <span>选饰品</span>
+          <small class="pp-sec-sub">（每款用 ± 调数量）</small>
+        </div>
+        <div class="pp-sec-meta">
+          ${n ? `<span class="pp-count">已选 ${n} 袋</span>` : '<span class="pp-sec-hint">点击折叠/展开</span>'}
+        </div>
+      </div>
+      <div class="pp-sec-body">
+        <div class="pack-rows">${rows || '<span class="empty-hint">该品类还没有解锁款式，先去进货</span>'}</div>
+        ${n ? `<span class="pp-count pp-body-count">已选 ${n} 件饰品（共 ${n} 袋）</span>` : ''}
+      </div>
     </div>
-    <div class="pp-sec"><label>配硬币（点硬币加入，点下方已放的取回；总数须 = ${n || 0}）<button class="btn btn-mini" data-act="autocoin" ${n === 0 ? 'disabled' : ''}>自动配币</button></label>
-      <div class="coin-adds">${coinAdds}</div>
-      <div class="coin-added-row">${coinChips || '<span class="empty-hint">还没放硬币，点上面加入</span>'}</div>
-      <span class="pp-count ${coinSum === n ? '' : 'warn'}">硬币 ${coinSum} / ${n}</span>
+
+    <div class="pp-sec ${coinOpen ? 'open' : 'collapsed'}">
+      <div class="pp-sec-head" data-toggle-sec="coins">
+        <div class="pp-sec-title">
+          <i class="arr">${coinOpen ? '▾' : '▸'}</i>
+          <span>配硬币</span>
+          <small class="pp-sec-sub">（总数须 = ${n || 0}）</small>
+        </div>
+        <div class="pp-sec-meta">
+          <span class="pp-count ${coinSum === n && n > 0 ? '' : 'warn'}">硬币 ${coinSum} / ${n}</span>
+          <button class="btn btn-mini" data-act="autocoin" ${n === 0 ? 'disabled' : ''}>自动配币</button>
+        </div>
+      </div>
+      <div class="pp-sec-body">
+        <div class="coin-adds">${coinAdds}</div>
+        <div class="coin-added-row">${coinChips || '<span class="empty-hint">还没放硬币，点上面加入</span>'}</div>
+        <div class="coin-summary-foot">
+          <span class="pp-count ${coinSum === n && n > 0 ? '' : 'warn'}">已配硬币：${coinSum} / ${n} 枚</span>
+        </div>
+      </div>
     </div>
+
     <div class="pp-actions">
       <button class="btn btn-ghost" data-act="autofill" data-cat="${cat}" ${CAT_KEYS_stockOf(s, cat) === 0 ? 'disabled' : ''}>一键装袋</button>
       <button class="btn btn-primary" data-act="confirm" data-cat="${cat}" ${ready ? '' : 'disabled'}>确认装袋</button>
@@ -583,6 +624,16 @@ function draftPicks() {
 }
 
 function wirePackPanel(body) {
+  body.querySelectorAll('[data-toggle-sec]').forEach((head) => {
+    head.onclick = (e) => {
+      if (e.target.closest('[data-act="autocoin"]')) return
+      const sec = head.dataset.toggleSec
+      packCollapsed[sec] = !packCollapsed[sec]
+      sfx.tap()
+      renderTab(body.closest('.tab-body'))
+    }
+  })
+
   body.querySelectorAll('[data-inc]').forEach((b) => {
     b.onclick = () => {
       const s = getState()
@@ -644,7 +695,8 @@ function wirePackPanel(body) {
     }
   })
   const auto = body.querySelector('[data-act="autocoin"]')
-  if (auto) auto.onclick = () => {
+  if (auto) auto.onclick = (e) => {
+    e.stopPropagation()
     sfx.tap()
     draft.coins = autoDistribute(draftTotal())
     renderTab(body.closest('.tab-body'))
@@ -660,6 +712,8 @@ function wirePackPanel(body) {
     playPackModal(cat, picks.length, picks, coins)
     draft.counts = {}
     draft.coins = {}
+    packCollapsed.designs = true
+    packCollapsed.coins = true
   }
   const confirm = body.querySelector('[data-act="confirm"]')
   if (confirm) confirm.onclick = () => {
@@ -675,6 +729,8 @@ function wirePackPanel(body) {
     playPackModal(cat, picks.length, picks, coins)
     draft.counts = {}
     draft.coins = {}
+    packCollapsed.designs = true
+    packCollapsed.coins = true
   }
 }
 

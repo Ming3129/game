@@ -50,8 +50,9 @@ function noise(dur, { vol = 0.12, delay = 0, hp = 800 } = {}) {
   src.start(t0)
 }
 
-export const sfx = {
+const sfxImpl = {
   tap:      () => tone(660, 0.06, { type: 'triangle', vol: 0.08 }),
+  click:    () => tone(660, 0.06, { type: 'triangle', vol: 0.08 }),
   buy:      () => { tone(520, 0.08, { type: 'triangle', vol: 0.1 }); tone(780, 0.1, { type: 'triangle', vol: 0.1, delay: 0.07 }) },
   tear:     () => noise(0.18, { vol: 0.14, hp: 1200 }),
   coin:     () => { tone(880, 0.09, { vol: 0.12 }); tone(1320, 0.14, { vol: 0.1, delay: 0.06 }) },
@@ -61,9 +62,17 @@ export const sfx = {
   legendary:() => { [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.22, { vol: 0.13, delay: i * 0.09 })) },
   fans:     () => { tone(587, 0.08, { vol: 0.09 }); tone(880, 0.12, { vol: 0.09, delay: 0.06 }) },
   bad:      () => tone(180, 0.25, { type: 'sawtooth', vol: 0.08, slide: -60 }),
+  warn:     () => tone(220, 0.2, { type: 'sawtooth', vol: 0.09, slide: -40 }),
   zip:      () => noise(0.05, { vol: 0.09, hp: 1800 }),
   seal:     () => { noise(0.1, { vol: 0.1, hp: 1500 }); tone(880, 0.08, { type: 'triangle', vol: 0.12 }); tone(1320, 0.14, { type: 'triangle', vol: 0.12, delay: 0.06 }) },
 }
+
+export const sfx = new Proxy(sfxImpl, {
+  get(target, prop) {
+    if (prop in target) return target[prop]
+    return target.tap
+  },
+})
 
 // ---------- DOM 特效 ----------
 

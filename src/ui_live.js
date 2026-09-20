@@ -826,10 +826,10 @@ function renderBagArea(stage) {
   spawnDanmaku(DANMAKU.order, orderCount, orderDelay)
 }
 
-function makeBag(o, bonus) {
+function makeBag(o, bonus, isMilk = false) {
   const b = document.createElement('button')
-  b.className = 'bag ziplock' + (bonus ? ' bonus' : '')
-  b.innerHTML = `<div class="bag-body"><div class="bag-hang-hole"></div><div class="bag-zip-strip"></div><span class="bag-cat">${icon(o.cat, 20)}</span>${bonus ? '<em class="bag-plus">+1</em>' : ''}</div>`
+  b.className = 'bag ziplock' + (bonus ? ' bonus' : '') + (isMilk ? ' milk' : '')
+  b.innerHTML = `<div class="bag-body"><div class="bag-hang-hole"></div><div class="bag-zip-strip"></div><span class="bag-cat">${icon(o.cat, 20)}</span>${isMilk ? '<em class="bag-plus milk">🍼+1</em>' : (bonus ? '<em class="bag-plus">+1</em>' : '')}</div>`
   b.onclick = () => openOne(b)
   return b
 }
@@ -1481,16 +1481,19 @@ function showPairModal(paired, queue) {
   }
 }
 
-// 底部操作区：保底补拆 / 完成订单
+// 底部操作区：保底补拆 / 奶一口 / 完成订单
 function renderExtra(queue) {
   const extra = document.getElementById('lvExtra')
   const ctx = session.ctx
   if (!extra) return
   extra.innerHTML = ''
   if (ctx.queue > 0) return
+
+  // 保底机制：若开袋数不足最低保底，强制先补拆一袋
   if (ctx.opened.length < GUARANTEE_MIN) {
     const btn = document.createElement('button')
     btn.className = 'btn btn-ghost'
+    btn.id = 'lvGuaranteeBtn'
     btn.textContent = `补拆一袋（保底 ${ctx.opened.length}/${GUARANTEE_MIN}）`
     btn.onclick = () => {
       session.ctx.queue++
@@ -1502,11 +1505,65 @@ function renderExtra(queue) {
     extra.appendChild(btn)
     return
   }
-  const btn = document.createElement('button')
-  btn.className = 'btn btn-primary btn-big'
-  btn.textContent = '完成订单'
-  btn.onclick = () => completeOrder(document.getElementById('stage'))
-  extra.appendChild(btn)
+
+  // 此时所有盲袋均已拆完：提供自主选择【奶一口】或【完成订单】
+  const actionsWrap = document.createElement('div')
+  actionsWrap.className = 'lv-extra-actions'
+
+  const milkCount = ctx.milkCount || 0
+  const milkBtn = document.createElement('button')
+  milkBtn.className = 'btn btn-milk'
+  milkBtn.id = 'lvMilkBtn'
+  milkBtn.innerHTML = `🍼 奶一口${milkCount > 0 ? ` <span class="milk-badge">×${milkCount}</span>` : '<span class="milk-sub">+1袋</span>'}`
+  milkBtn.title = '为主播的单主额外加拆一袋盲袋！'
+  milkBtn.onclick = () => {
+    ctx.milkCount = (ctx.milkCount || 0) + 1
+    session.ctx.queue++
+    const milkBag = makeBag(session.order, true, true)
+    queue.appendChild(milkBag)
+    sfx.fans()
+    session.heat = (session.heat || 0) + 2
+    updateTopbarNumbers(getState())
+
+    spawnLiveNotice('buff', '奶一口', `主播给单主 ${session.order.buyerName || '贵宾'} 豪横奶了一袋！`)
+    floatText(milkBag, '🍼 奶一口 +1袋！', '#FF7EB6', true)
+
+    spawnBuyerDanmaku(
+      pick([
+        '哇塞！！谢谢主播给我奶一口！！爱你！',
+        '主播太好了吧！看我这袋能不能出大隐藏！',
+        '啊啊啊被主播奶到了！这次必出金！',
+        '呜呜呜感恩主播！爱住这个直播间了！',
+      ]),
+      150
+    )
+    spawnDanmaku(
+      [
+        '主播大气！',
+        '给单主奶活了！',
+        '格局打开了！',
+        '我也想要主播奶一口呜呜',
+        '再来一袋冲冲冲！',
+        '看好这袋，肯定能对碰！',
+      ],
+      2,
+      300
+    )
+
+    extra.innerHTML = ''
+    const active = document.getElementById('lvActive')
+    if (active) active.innerHTML = '<div class="lv-hint milk-hint">🍼 奶了一袋！点下方盲袋开拆</div>'
+  }
+
+  const doneBtn = document.createElement('button')
+  doneBtn.className = 'btn btn-primary btn-big'
+  doneBtn.id = 'lvDoneBtn'
+  doneBtn.textContent = '完成订单'
+  doneBtn.onclick = () => completeOrder(document.getElementById('stage'))
+
+  actionsWrap.appendChild(milkBtn)
+  actionsWrap.appendChild(doneBtn)
+  extra.appendChild(actionsWrap)
 }
 
 // 完成订单：收获弹窗展示本单全部所得
@@ -1557,6 +1614,7 @@ function completeOrder(stage) {
         <div><span>营收</span><b class="hv-earn">+¥${r.price}</b></div>
         <div><span>粉丝</span><b class="hv-fans">+${r.fans}</b></div>
         ${session.ctx.pairs ? `<div><span>对对碰</span><b class="hv-base">${session.ctx.pairs} 次</b></div>` : ''}
+        ${session.ctx.milkCount ? `<div><span>主播奶袋</span><b class="hv-milk">🍼 ${session.ctx.milkCount} 袋</b></div>` : ''}
       </div>
       <button class="btn btn-primary btn-big" id="hvNext">下一单</button>
     </div>`, { closable: false })
