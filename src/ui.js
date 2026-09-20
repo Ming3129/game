@@ -244,6 +244,11 @@ export function mount() {
     renderScreen()
   })
 
+  // 禁用长按原生菜单与右键呼出，满足小工具合规要求
+  window.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+  })
+
   // 页面关闭或切换后台时紧急写盘保底
   window.addEventListener('beforeunload', () => {
     saveNow()

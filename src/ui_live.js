@@ -700,10 +700,10 @@ function openOne(bagEl) {
     let hasSpecialDm = false
 
     if (ev.isCrit) {
-      spawnLiveNotice('bag', '★ 欧气暴击！', `欧气值 ${ev.luckyVal} · 单主追加小费 +¥15！`)
+      spawnLiveNotice('bag', '★ 欧气暴击！', `欧气值 ${ev.luckyVal} · 单主追加小费 +¥10！`)
       spawnBuyerDanmaku('这袋欧气爆表！值了值了！给主播赏小费！', 200)
       spawnDanmaku(['欧气大暴击！', '吸欧气吸欧气！', '这手气绝了！'], 2)
-      floatText(mover, '+¥15 小费', '#FFD98E')
+      floatText(mover, '+¥10 小费', '#FFD98E')
       sfx.cash()
       hasSpecialDm = true
     }
@@ -806,6 +806,7 @@ function renderBoxItems() {
       const it = byId[id]
       return `<span class="box-jewel rc-${it.d.rarity}${it.style ? ' style-hit' : ''}">${icon(it.d, 14)}${it.d.name}${it.n > 1 ? ` ×${it.n}` : ''}</span>`
     }).join('')
+  box.scrollTop = box.scrollHeight
 }
 
 function s_trendStyle() {
@@ -823,6 +824,7 @@ function addToTray(coinKey) {
   chip.innerHTML = `<i class="coin-dot" style="--cc:${COINS[coinKey].hex}">${COINS[coinKey].name}</i>`
   tray.appendChild(chip)
   popIn(chip)
+  tray.scrollTop = tray.scrollHeight
 }
 
 // 对对碰结算后：只把被配对消耗的硬币原地渐变淡出，没凑成对的单枚留在木盘里等下轮

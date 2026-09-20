@@ -317,7 +317,7 @@ export function openBag(s, order, ctx) {
 
   const isCrit = luckyVal >= 88
   if (isCrit) {
-    ctx.critBonus = (ctx.critBonus || 0) + 15 // 欧气暴击：单主多给小费 +¥15
+    ctx.critBonus = (ctx.critBonus || 0) + 10 // 欧气暴击：单主多给小费 +¥10
   }
 
   ctx.opened.push({ slot: isBonus ? 'bonus' : 'order', design, coin, luckyVal, isCrit, upgraded })

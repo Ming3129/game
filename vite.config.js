@@ -3,8 +3,8 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   base: './',
   build: {
-    target: ['es2017', 'chrome61'],
-    cssTarget: 'chrome61',
+    target: 'es2015',
+    cssTarget: 'chrome50',
     modulePreload: false,
     rollupOptions: {
       output: {

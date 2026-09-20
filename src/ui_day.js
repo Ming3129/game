@@ -16,8 +16,8 @@ import { startLive } from './ui_live.js'
 
 // 装袋草稿（临时态，不入档；按天保留，切页签不丢）。counts: designId -> 数量
 const draft = { day: 0, cat: null, counts: {}, coins: {} }
-// 补货品类折叠状态（按天或页签保留），存储被折叠的品类 key
-const collapsedCats = new Set()
+// 款式补货品类展开状态：默认全部折叠，记录被用户主动展开的品类 key
+const expandedCats = new Set()
 
 export function renderDay(root) {
   const s = getState()
@@ -108,9 +108,12 @@ function renderTab(body) {
 function renderShop(body) {
   const s = getState()
   const shopList = s.shop || []
-  const availableOffers = shopList.filter((o) => !o.sold)
+  const availableOffers = shopList.map((o, idx) => ({ ...o, idx })).filter((o) => !o.sold)
   const remainingCount = availableOffers.length
+  const totalCostAll = availableOffers.reduce((sum, o) => sum + (o.price || 50), 0)
   const canRandomDraw = s.money >= 50 && remainingCount > 0
+  const canBuyAll = remainingCount > 0 && s.money >= totalCostAll
+  const canRefreshShelf = s.money >= 50
 
   const shelfSlotsHtml = shopList.map((o, i) => {
     const price = o.price || 50
@@ -148,8 +151,8 @@ function renderShop(body) {
       const bPri = (b.id === s.trend?.saleStyle ? 2 : 0) + (b.id === s.trend?.style ? 1 : 0)
       return bPri - aPri
     })
-    const isCollapsed = collapsedCats.has(cat)
-    return `<div class="restock-cat ${isCollapsed ? 'collapsed' : ''}" data-cat-id="${cat}">
+    const isExpanded = expandedCats.has(cat)
+    return `<div class="restock-cat ${isExpanded ? '' : 'collapsed'}" data-cat-id="${cat}">
       <div class="restock-head" data-toggle-cat="${cat}">
         <span class="rc-head-title">
           ${icon(cat, 18)}
@@ -197,8 +200,11 @@ function renderShop(body) {
           <span class="wood-sign-text">盲盒</span>
         </div>
         <div class="wood-header-actions">
-          <button class="btn btn-mini ${canRandomDraw ? 'btn-primary' : 'wood-btn-gray'}" id="woodRandomDraw" ${!canRandomDraw ? 'disabled' : ''}>
-            随机抽一盒
+          <button class="btn btn-mini wood-btn-refresh ${canRefreshShelf ? '' : 'wood-btn-gray'}" id="woodRefreshShelf" ${!canRefreshShelf ? 'disabled' : ''} title="花费 ¥50 重新生成整架 10 盒盲盒">
+            刷新货架 ¥50
+          </button>
+          <button class="btn btn-mini ${canBuyAll ? 'btn-primary' : 'wood-btn-gray'}" id="woodBuyAll" ${!canBuyAll ? 'disabled' : ''} title="一键购买当前货架所有在售盲盒">
+            一键购买${remainingCount > 0 ? ` (¥${totalCostAll})` : ' (已售空)'}
           </button>
         </div>
       </div>
@@ -224,12 +230,38 @@ function renderShop(body) {
     </div>
     <div class="restock">${restockRows || '<p class="empty-hint">还没有解锁任何款式，先抽几个盲盒吧</p>'}</div>`
 
+  // 刷新货架按钮（花50更新整个货架）
+  const refreshShelfBtn = body.querySelector('#woodRefreshShelf')
+  if (refreshShelfBtn) {
+    refreshShelfBtn.onclick = () => {
+      if (s.money < 50) return toast('余额不足，刷新货架需 ¥50', 'warn')
+      s.money -= 50
+      s.shop = rollShop(s)
+      sfx.tear()
+      sfx.coin()
+      toast('已消耗 ¥50 刷新整个盲盒货架！', 'good')
+      refresh()
+    }
+  }
+
+  // 一键购买货架上所有盲盒
+  const buyAllBtn = body.querySelector('#woodBuyAll')
+  if (buyAllBtn) {
+    buyAllBtn.onclick = () => {
+      const avail = (s.shop || []).map((o, idx) => ({ ...o, idx })).filter((o) => !o.sold)
+      if (avail.length === 0) return toast('当前货架盲盒已全部售空，可花 ¥50 刷新货架！', 'info')
+      const totalCost = avail.reduce((sum, o) => sum + (o.price || 50), 0)
+      if (s.money < totalCost) return toast(`余额不足，一键购买全架需 ¥${totalCost}`, 'warn')
+      openMultiBoxModal(avail)
+    }
+  }
+
   // 随机盲抽按钮
   const randomDrawBtn = body.querySelector('#woodRandomDraw')
   if (randomDrawBtn) {
     randomDrawBtn.onclick = () => {
       const avail = (s.shop || []).map((o, idx) => ({ ...o, idx })).filter((o) => !o.sold)
-      if (avail.length === 0) return toast('今日盲盒架已售空，请明天再来！', 'info')
+      if (avail.length === 0) return toast('今日盲盒架已售空，请花 ¥50 刷新或明天再来！', 'info')
       if (s.money < 50) return toast('钱不够啦，单抽需 ¥50', 'warn')
       const chosen = avail[Math.floor(Math.random() * avail.length)]
       openBoxModal(chosen.cat, chosen.tier, chosen.idx)
@@ -248,18 +280,18 @@ function renderShop(body) {
     }
   })
 
-  // 补货品类折叠/展开
+  // 补货品类折叠/展开（默认折叠）
   body.querySelectorAll('[data-toggle-cat]').forEach((head) => {
     head.onclick = (e) => {
       e.stopPropagation()
       const catKey = head.dataset.toggleCat
       const catEl = head.closest('.restock-cat')
-      if (collapsedCats.has(catKey)) {
-        collapsedCats.delete(catKey)
-        catEl?.classList.remove('collapsed')
-      } else {
-        collapsedCats.add(catKey)
+      if (expandedCats.has(catKey)) {
+        expandedCats.delete(catKey)
         catEl?.classList.add('collapsed')
+      } else {
+        expandedCats.add(catKey)
+        catEl?.classList.remove('collapsed')
       }
       sfx.click()
     }
@@ -273,6 +305,92 @@ function renderShop(body) {
       refresh()
     }
   })
+}
+
+// 一键批量购买并连拆所有盲盒
+function openMultiBoxModal(availOffers) {
+  const s = getState()
+  const totalCost = availOffers.reduce((sum, o) => sum + (o.price || 50), 0)
+  if (s.money < totalCost) return toast(`余额不足，一键购买需 ¥${totalCost}`, 'warn')
+
+  const allItems = []
+  let totalNew = 0
+
+  for (const offer of availOffers) {
+    const res = rollBox(s, offer.cat, offer.tier)
+    if (res.ok) {
+      if (offer.idx != null && s.shop[offer.idx]) s.shop[offer.idx].sold = true
+      res.items.forEach((it) => {
+        allItems.push({ ...it, cat: offer.cat })
+        if (it.isNew) totalNew++
+      })
+    }
+  }
+
+  const boxCount = availOffers.length
+  const { close } = openModal(`
+    <div class="boxstage boxstage-multi">
+      <div class="bm-modal-title">✨ 一键全购！连拆 ${boxCount} 盒盲盒...</div>
+      <div class="box3d bm-mystery-3d-box" id="box3d">
+        <div class="bm-modal-rect-box"></div>
+      </div>
+      <div class="box-reveal-banner" id="boxRevealBanner" style="display:none;"></div>
+      <div class="box-items box-items-multi" id="boxItems"></div>
+      <button class="btn btn-primary" id="boxOk" style="visibility:hidden">全部收下并入库</button>
+    </div>`, { closable: false })
+
+  const boxEl = document.getElementById('box3d')
+  setTimeout(() => {
+    boxEl.classList.add('shaking')
+    sfx.tap()
+  }, 60)
+
+  setTimeout(() => {
+    boxEl.classList.remove('shaking')
+    boxEl.classList.add('opened')
+    const rect = boxEl.getBoundingClientRect()
+    burst(rect.left + rect.width / 2, rect.top + rect.height / 2, ['#FFD98E', '#FF7EB6', '#7DE2D1', '#C77DFF'], 36)
+    sfx.tear()
+
+    const banner = document.getElementById('boxRevealBanner')
+    if (banner) {
+      banner.style.display = 'flex'
+      banner.innerHTML = `<span class="reveal-text">大丰收！共拆出 <b>${allItems.length} 件</b> 饰品${totalNew > 0 ? `（包含 <b style="color:var(--pink)">${totalNew} 款新品</b>）` : ''}！</span>`
+    }
+
+    const wrap = document.getElementById('boxItems')
+    let hasLegendary = false
+    allItems.forEach((it, i) => {
+      const div = document.createElement('div')
+      div.className = 'box-item'
+      div.innerHTML = `${designCard(it.design)}${it.isNew ? '<span class="new-badge">NEW</span>' : ''}
+        <span class="grant">${it.isNew ? `解锁图鉴 +${it.grant} 件` : `补货 +${it.grant} 件`}</span>`
+      wrap.appendChild(div)
+      popIn(div, i * 70)
+      const r = it.design.rarity
+      if (r === 'legendary') hasLegendary = true
+      setTimeout(() => {
+        if (r === 'legendary') sfx.legendary()
+        else if (r === 'epic') sfx.rare()
+        else sfx.coin()
+        if (r === 'epic' || r === 'legendary') {
+          const d = div.getBoundingClientRect()
+          burst(d.left + d.width / 2, d.top + d.height / 2, [RARITIES[r].color, '#FFF'], 10)
+        }
+      }, i * 70 + 100)
+    })
+
+    setTimeout(() => {
+      document.getElementById('boxOk').style.visibility = 'visible'
+      if (hasLegendary) sfx.legendary()
+    }, allItems.length * 70 + 220)
+  }, 900)
+
+  document.getElementById('boxOk').onclick = () => {
+    sfx.buy()
+    close()
+    refresh()
+  }
 }
 
 // 盲盒开盒动画弹窗（购买商店 offer 时标记售罄，开盒揭晓品类与饰品）

@@ -153,7 +153,7 @@ export const designById = (id) => DESIGNS.find((d) => d.id === id)
 // 盲盒机：统一每个盲盒定价 50，等级固定为 SSS 顶级神秘盲盒；slots 描述开出内容；wild 按 odds 掷品质
 export const BOX_PRICE = 50
 export const BOXES = {
-  SSS: { key: 'SSS', name: '神秘盲盒', price: 50, desc: '1 普通 + 3 稀有 + 1 史诗 + 2 随机', slots: [ { rarity: 'common', n: 1 }, { rarity: 'rare', n: 3 }, { rarity: 'epic', n: 1 }, { rarity: 'wild', n: 2, odds: [ ['epic', 0.9], ['legendary', 0.1] ] } ] },
+  SSS: { key: 'SSS', name: '神秘盲盒', price: 50, desc: '1 普通 + 3 稀有 + 1 史诗 + 2 随机', slots: [ { rarity: 'common', n: 1 }, { rarity: 'rare', n: 3 }, { rarity: 'epic', n: 1 }, { rarity: 'wild', n: 3, odds: [ ['epic', 0.8], ['legendary', 0.15], ['limited'] ] } ] },
 }
 export const BOX_KEYS = ['SSS']
 export const UNLOCK_GRANT = 10 // 新款式解锁时一次入库数量
@@ -205,8 +205,8 @@ export function getCoinPairEffect(coinKey) {
 export const TIERS = [
   { key: 'rookie', name: '新人主播', fans: 100,    orders: [1, 3],  bags: [4, 6], cap: 50,  fanMult: 1 },
   { key: 'small',  name: '小主播',   fans: 1000,   orders: [3, 5],  bags: [4, 7], cap: 100, fanMult: 2 },
-  { key: 'waist',  name: '腰部主播', fans: 10000,  orders: [5, 8],  bags: [4, 8], cap: 150, fanMult: 4 },
-  { key: 'big',    name: '大主播',   fans: 100000, orders: [8, 10], bags: [4, 9], cap: 200, fanMult: 7 },
+  { key: 'waist',  name: '腰部主播', fans: 10000,  orders: [5, 8],  bags: [5, 9], cap: 150, fanMult: 4 },
+  { key: 'big',    name: '大主播',   fans: 100000, orders: [8, 10], bags: [6, 12], cap: 200, fanMult: 7 },
 ]
 export function tierOf(fans) {
   let t = TIERS[0]
