@@ -233,6 +233,11 @@ export const LIMITED_FAN_BONUS = 50     // 售出限定饰品粉丝奖励
 export const GEM_MARKET_FANS = 10000    // 宝石市场解锁粉丝数
 export const ENABLE_GEM_CHANNEL = false // 暂时关闭宝石通道
 
+// 花钱投流推广（粉丝数达到 10000 解锁，每天限 1 次）
+export const AD_BOOST_FANS = 10000       // 解锁粉丝数
+export const AD_BOOST_COST = 200         // 投流费用 ¥200
+export const AD_BOOST_HEAT_MULT = 0.15   // 投流增幅：增加 15% 粉丝数的热度，确保热度超 20% 达标并引入双倍单
+
 // 订单定价：15 + 初始盲袋数×3，命中风向 ×1.5，幸运红/绿币对碰分别 +10%/+5%
 export const ORDER_BASE = 15
 export const ORDER_PER_BAG = 3 // 按订单初始袋数计

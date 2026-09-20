@@ -3,12 +3,17 @@ import { getState, setState } from './state.js'
 import {
   CATS, CAT_KEYS, COINS, COIN_KEYS, RARITIES, DANMAKU, ORDER_BASE, ORDER_PER_BAG, TREND_MULT,
   GEMS, DESIGNS, designById, GUARANTEE_MIN, STREAMS_PER_DAY, HEAT_START_RATE, HEAT_FAN_BONUS,
+  AD_BOOST_FANS, AD_BOOST_COST, AD_BOOST_HEAT_MULT, tierOf,
 } from './data.js'
-import { planStream, newOrderSession, openBag, resolvePairs, resolveSinglePair, finishOrder, settleDay, nextDay } from './engine.js'
+import { planStream, newOrderSession, openBag, resolvePairs, resolveSinglePair, finishOrder, settleDay, nextDay, BUYER_NAMES } from './engine.js'
 import { freshStats } from './state.js'
 import { updateTopbarNumbers, toast, icon, openModal } from './ui.js'
 import { sfx, floatText, burst, popIn, shake } from './fx.js'
 import { saveNow } from './save.js'
+
+const rand = (n) => Math.floor(Math.random() * n)
+const randInt = (a, b) => a + rand(b - a + 1)
+const pick = (arr) => arr[rand(arr.length)]
 
 let session = null
 let timers = []
@@ -24,10 +29,20 @@ export function startLive() {
   if (!s.stats) s.stats = freshStats()
   const orders = planStream(s)
   if (orders.length === 0) return toast('先去装袋，再开播', 'warn')
+
+  // 直播随机事件（每场[0, 1]次，10%发生几率，90%不发生，跌涨五五分）
+  const willHaveEvent = Math.random() < 0.10
+  const isGain = Math.random() < 0.50
+
   session = {
     orders, idx: -1, ctx: null, order: null,
     heat: Math.ceil(s.fans * HEAT_START_RATE), // 初始热度 = 粉丝数 ×15%
     streamStarted: false,
+    hasRandomEvent: willHaveEvent,
+    randomEventTriggered: false,
+    randomEventIsGain: isGain,
+    totalBagsOpened: 0,
+    adBoostPrompted: false,
   }
   setState({ screen: 'live' })
   saveNow()
@@ -60,7 +75,16 @@ export function renderLive(root) {
   updateHeat()
   const stage = root.querySelector('#stage')
   stage.innerHTML = `<div class="live-intro"><div class="li-ic">📡</div><b>直播准备中…</b><span>观众正在涌入</span></div>`
-  timers.push(setTimeout(() => nextOrder(stage), 1400))
+
+  // 检查是否解锁「花钱投流」功能：粉丝达到 10000 解锁，每天限 1 次；在开播之后弹窗让玩家选择是否使用
+  if (s.fans >= AD_BOOST_FANS && !s.adBoostUsedToday && !session.adBoostPrompted) {
+    session.adBoostPrompted = true
+    promptAdBoostModal(stage, () => {
+      timers.push(setTimeout(() => nextOrder(stage), 800))
+    })
+  } else {
+    timers.push(setTimeout(() => nextOrder(stage), 1400))
+  }
 }
 
 // 观众随机昵称池
@@ -183,6 +207,177 @@ export function spawnLiveNotice(type, title, desc, extraHtml = '') {
   // 保持整洁，最多保留8条通知
   while (container.children.length > 8) {
     container.removeChild(container.firstChild)
+  }
+}
+
+// 粉丝达到 10000 解锁的花钱投流弹窗（每日限 1 次，在开播之后弹出选择）
+function promptAdBoostModal(stage, onDone) {
+  const s = getState()
+  const canAfford = s.money >= AD_BOOST_COST
+
+  const { close } = openModal(`
+    <div class="ad-boost-modal">
+      <div class="abm-head">
+        <span class="abm-badge">🔥 腰部主播特权 · 每日投流</span>
+        <h3 class="m-title" style="margin-bottom:2px;">开启平台推流</h3>
+      </div>
+      <p class="abm-desc">
+        粉丝数已达 <b>10,000</b>！可花费金币向平台购买专属推流服务，迅速引爆直播间热度并引流优质买家。
+      </p>
+      <div class="abm-card">
+        <div class="abm-item">
+          <span class="abm-ic">🚀</span>
+          <div class="abm-text">
+            <b>热度暴涨 · 突破粉丝数 20%</b>
+            <span>投流后当场直播热度大幅提升，直接达标平台爆款推流池。</span>
+          </div>
+        </div>
+        <div class="abm-item">
+          <span class="abm-ic">💎</span>
+          <div class="abm-text">
+            <b>额外追加 1 笔【双倍价格】订单</b>
+            <span>热度超过 20% 平台追加优质大单，该订单享受<b>双倍价格收益</b>！</span>
+          </div>
+        </div>
+        <div class="abm-price-bar">
+          <span>投流服务费：<b>¥${AD_BOOST_COST}</b></span>
+          <small>当前余额 ¥${s.money} · 今日限投 1 次</small>
+        </div>
+      </div>
+      <div class="abm-actions">
+        <button class="btn btn-ghost" id="abmSkip">暂不投流，直接开播</button>
+        <button class="btn btn-primary" id="abmConfirm" ${canAfford ? '' : 'disabled'}>
+          ${canAfford ? `花费 ¥${AD_BOOST_COST} 确认投流` : '余额不足 ¥200'}
+        </button>
+      </div>
+    </div>`, { closable: false })
+
+  const handleDone = () => {
+    close()
+    onDone()
+  }
+
+  const btnSkip = document.getElementById('abmSkip')
+  if (btnSkip) {
+    btnSkip.onclick = () => {
+      sfx.tap()
+      handleDone()
+    }
+  }
+
+  const btnConfirm = document.getElementById('abmConfirm')
+  if (btnConfirm) {
+    btnConfirm.onclick = () => {
+      if (s.money < AD_BOOST_COST) return toast('金币余额不足', 'warn')
+      s.money -= AD_BOOST_COST
+      s.adBoostUsedToday = true
+
+      // 增加当场直播的热度（超过粉丝数 20%）
+      // 默认初始热度为粉丝数 15%，增加 15% 粉丝数的热度，使热度达到 30% 粉丝数，稳超 20%
+      const heatBoost = Math.ceil(s.fans * AD_BOOST_HEAT_MULT)
+      session.heat += heatBoost
+      updateHeat()
+
+      // 热度超过粉丝数的 20% 就增加一个订单，并且增加的订单是双倍价格
+      const tier = tierOf(s.fans)
+      const stocked = CAT_KEYS.filter((k) => (s.packed[k] || []).length > 0)
+      const promoCat = (s.packed[s.trend.cat] || []).length > 0 ? s.trend.cat : (stocked.length > 0 ? pick(stocked) : s.trend.cat)
+      const promoSize = Math.max(4, Math.min(randInt(tier.bags[0], tier.bags[1]), (s.packed[promoCat] || []).length + 2))
+      const promoOrder = {
+        type: 'bags',
+        cat: promoCat,
+        size: promoSize,
+        lucky: pick(COIN_KEYS),
+        buyerName: '🔥推广贵宾·' + pick(BUYER_NAMES),
+        doublePrice: true,
+        isPromotion: true,
+      }
+      session.orders.push(promoOrder)
+
+      sfx.cash()
+      toast('🔥 投流成功！热度突破 20%，已引入 1 笔双倍价格推单！')
+      spawnLiveNotice('gold', '🔥 平台投流', `推流注入！热度 +${heatBoost}，增加 1 笔双倍价格推单！`)
+      updateTopbarNumbers(s)
+      saveNow()
+      handleDone()
+    }
+  }
+}
+
+// 直播随机突发事件（每场[0, 1]次，10%发生几率，90%不发生，涨跌几率五五分）
+function triggerLiveRandomEvent(isGain, targetEl) {
+  const s = getState()
+  if (isGain) {
+    // 涨粉事件（50%）
+    const delta = Math.max(15, Math.round(s.fans * (0.015 + Math.random() * 0.02) + 10))
+    const events = [
+      {
+        title: '🌟 大V查房',
+        desc: '头部大主播带队前来查房，高呼「这家对对碰太解压了」！路人纷纷点赞关注。',
+        danmaku: ['大主播查房！全员集合！', '从隔壁直播间过来的！', '这手气太神了关注了', '主播好有意思啊'],
+      },
+      {
+        title: '🔥 切片上热门',
+        desc: '刚才的高能开盒切片被观众录屏发到短视频平台，点赞破万登上同城热门！',
+        danmaku: ['在同城热门刷到的！', '特意赶来看直播', '刚才那一抽太绝了', '关注主播！'],
+      },
+      {
+        title: '🎙️ 金句整活出圈',
+        desc: '主播刚才的幽默接梗被弹幕疯狂打call，直播间互动率飙升，路人纷纷转粉！',
+        danmaku: ['哈哈哈哈主播太有梗了', '冲着这口才必须关注', '每天下饭必看', '关注了主播加油'],
+      },
+      {
+        title: '📈 官方算法推流',
+        desc: '直播间高留存表现优异，触发平台流量激励算法，曝光量飙升，新观众大量涌入关注！',
+        danmaku: ['系统推荐进来的！', '宝藏直播间被我发现了', '关注一波', '盲盒还能这么玩！'],
+      },
+    ]
+    const ev = pick(events)
+    s.fans += delta
+    s.stats.fansToday += delta
+    updateTopbarNumbers(s)
+    updateFoot()
+    sfx.fans()
+    spawnLiveNotice('gold', `🎉 ${ev.title}`, `${ev.desc}（粉丝 +${delta}）`)
+    spawnDanmaku(ev.danmaku, 3, 200)
+    if (targetEl) floatText(targetEl, `+${delta} 粉丝`, '#FF7EB6')
+  } else {
+    // 跌粉事件（50%）
+    const maxLoss = Math.max(0, s.fans - 10)
+    const delta = Math.min(maxLoss, Math.max(5, Math.round(s.fans * (0.01 + Math.random() * 0.015) + 5)))
+    const events = [
+      {
+        title: '📡 网络波动卡顿',
+        desc: '推流网络突发丢包掉帧，画面短暂卡顿转圈，几位急脾气的观众取关离开了…',
+        danmaku: ['刚才是不是卡了一下？', '主播卡成PPT了', '画质怎么糊了', '还好恢复了'],
+      },
+      {
+        title: '🔨 隔壁突发装修',
+        desc: '隔壁突然开启重型电钻施工，刺耳噪音穿透麦克风，劝退了一批喜静的观众…',
+        danmaku: ['好吵啊隔壁在干嘛', '被电钻声吓一跳', '收音太真实了', '心疼主播一秒'],
+      },
+      {
+        title: '💬 黑粉公屏带节奏',
+        desc: '公屏混入几个恶意小号刷屏带节奏，部分不明真相的吃瓜路人被误导取关…',
+        danmaku: ['房管快出来封人！', '别理带节奏的', '哪来的小号刷屏', '主播专心拆别看弹幕'],
+      },
+      {
+        title: '😅 激动喊劈口误',
+        desc: '主播刚才拆到关键时刻一激动把款式喊劈叉了，几个追求完美的粉丝捂脸取关…',
+        danmaku: ['破音了哈哈哈哈', '声卡差点当场报销', '主播喝口水润润嗓', '太搞笑了'],
+      },
+    ]
+    const ev = pick(events)
+    if (delta > 0) {
+      s.fans = Math.max(10, s.fans - delta)
+      s.stats.fansToday -= delta
+      updateTopbarNumbers(s)
+      updateFoot()
+      sfx.bad()
+      spawnLiveNotice('loss', `⚠️ ${ev.title}`, `${ev.desc}（粉丝 -${delta}）`)
+      spawnDanmaku(ev.danmaku, 3, 200)
+      if (targetEl) floatText(targetEl, `-${delta} 粉丝`, '#8E767C')
+    }
   }
 }
 
@@ -482,19 +677,20 @@ function nextOrder(stage) {
   }
 
   const trendHit = o.cat === s.trend.cat
-  const est = Math.round((ORDER_BASE + o.size * ORDER_PER_BAG) * (trendHit ? TREND_MULT : 1))
+  const priceMult = o.doublePrice ? 2 : 1
+  const est = Math.round((ORDER_BASE + o.size * ORDER_PER_BAG) * (trendHit ? TREND_MULT : 1) * priceMult)
   const stock = (s.packed[o.cat] || []).length
   const orderNum = session.idx + (session.orders[0]?.type === 'limited' ? 0 : 1)
 
   if (stock < o.size) {
     const isZero = stock === 0
     stage.innerHTML = `
-      <div class="order-card stockout-order">
-        <div class="oc-tag ${trendHit ? 'hot' : ''}">
-          ${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}
+      <div class="order-card stockout-order ${o.doublePrice ? 'order-card-promo' : ''}">
+        <div class="oc-tag ${o.doublePrice ? 'promo' : trendHit ? 'hot' : ''}">
+          ${o.doublePrice ? '<span class="oc-tag-promo">🔥投流推广单</span> · ' : ''}${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}${o.doublePrice ? ' · 收益翻倍 ×2' : ''}
         </div>
         <div class="oc-buyer-bar">
-          <span class="oc-buyer-badge">单主</span>
+          <span class="oc-buyer-badge ${o.doublePrice ? 'promo-buyer' : ''}">${o.doublePrice ? '🔥推流贵宾' : '单主'}</span>
           <b class="oc-buyer-name">${o.buyerName || '神秘顾客'}</b>
         </div>
         <div class="oc-main">
@@ -506,7 +702,7 @@ function nextOrder(stage) {
               当前${CATS[o.cat].name}库存：<b>${stock} 袋</b> <span class="oc-stock-badge">${isZero ? '已缺货' : '库存不足'}</span>
             </div>
           </div>
-          <div class="oc-price">预估 <b>¥${est}</b></div>
+          <div class="oc-price">预估 <b class="${o.doublePrice ? 'promo-gold' : ''}">¥${est}</b></div>
         </div>
         <p class="oc-warn-tip">${isZero ? '该品类盲袋已无库存！' : `该品类盲袋库存不足（需要 ${o.size} 袋，现仅有 ${stock} 袋）！`}可跳过此单，或花 ¥50 保留至下场直播进货后再拆。</p>
         <div class="oc-btns oc-btns-empty">
@@ -551,12 +747,12 @@ function nextOrder(stage) {
   }
 
   stage.innerHTML = `
-    <div class="order-card">
-      <div class="oc-tag ${trendHit ? 'hot' : ''}">
-        ${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}
+    <div class="order-card ${o.doublePrice ? 'order-card-promo' : ''}">
+      <div class="oc-tag ${o.doublePrice ? 'promo' : trendHit ? 'hot' : ''}">
+        ${o.doublePrice ? '<span class="oc-tag-promo">🔥投流推广单</span> · ' : ''}${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}${o.doublePrice ? ' · 收益翻倍 ×2' : ''}
       </div>
       <div class="oc-buyer-bar">
-        <span class="oc-buyer-badge">单主</span>
+        <span class="oc-buyer-badge ${o.doublePrice ? 'promo-buyer' : ''}">${o.doublePrice ? '🔥推流贵宾' : '单主'}</span>
         <b class="oc-buyer-name">${o.buyerName || '神秘顾客'}</b>
       </div>
       <div class="oc-main">
@@ -568,7 +764,7 @@ function nextOrder(stage) {
             当前${CATS[o.cat].name}库存：<b>${stock} 袋</b>${stock < o.size ? ` <span class="oc-stock-low">(少于订单需求)</span>` : ''}
           </div>
         </div>
-        <div class="oc-price">预估 <b>¥${est}</b></div>
+        <div class="oc-price">预估 <b class="${o.doublePrice ? 'promo-gold' : ''}">¥${est}</b></div>
       </div>
       <div class="oc-btns">
         <button class="btn btn-primary btn-big" id="ocGo">接单备货</button>
@@ -769,6 +965,18 @@ function openOne(bagEl) {
         spawnLiveNotice('rare', '自选达成', `单主 ${o.buyerName || ''} 确定选择【${chosenDesign.name}】！`)
         floatText(active, `大隐藏自选达成！`, '#FF5EC8')
         spawnDanmaku(DANMAKU.secret_b, 2, 300)
+
+        // 检查本场直播突发随机事件（每场[0, 1]次，10%发生几率，90%不发生，涨跌几率五五分）
+        session.totalBagsOpened = (session.totalBagsOpened || 0) + 1
+        if (session.hasRandomEvent && !session.randomEventTriggered) {
+          if (session.totalBagsOpened >= 2 || Math.random() < 0.35) {
+            session.randomEventTriggered = true
+            timers.push(setTimeout(() => {
+              triggerLiveRandomEvent(session.randomEventIsGain, active)
+            }, 450))
+          }
+        }
+
         checkPhase(queue)
       })
       return
@@ -782,6 +990,17 @@ function openOne(bagEl) {
     renderBoxItems()
     // 硬币入木盘（此时不成对，拆完后统一结算）
     addToTray(ev.coin)
+
+    // 检查本场直播突发随机事件（每场[0, 1]次，10%发生几率，90%不发生，涨跌几率五五分）
+    session.totalBagsOpened = (session.totalBagsOpened || 0) + 1
+    if (session.hasRandomEvent && !session.randomEventTriggered) {
+      if (session.totalBagsOpened >= 2 || Math.random() < 0.35) {
+        session.randomEventTriggered = true
+        timers.push(setTimeout(() => {
+          triggerLiveRandomEvent(session.randomEventIsGain, mover)
+        }, 450))
+      }
+    }
 
     checkPhase(queue)
   }, 260)
@@ -1333,6 +1552,7 @@ function completeOrder(stage) {
       </div>` : ''}
       <div class="hv-result">
         <div><span>原本金额</span><b class="hv-base">¥${r.base ?? r.price}</b></div>
+        ${r.doublePrice ? `<div><span>投流加成</span><b class="hv-promo">双倍价格 ×2</b></div>` : ''}
         ${r.buffPart ? `<div><span>buff 加成</span><b class="hv-fans">+¥${r.buffPart}</b></div>` : ''}
         <div><span>营收</span><b class="hv-earn">+¥${r.price}</b></div>
         <div><span>粉丝</span><b class="hv-fans">+${r.fans}</b></div>

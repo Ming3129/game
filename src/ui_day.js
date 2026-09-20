@@ -135,9 +135,8 @@ function renderShop(body) {
         <div class="wood-box-display">
           <div class="wood-rect-box"></div>
         </div>
-        <div class="wood-box-price">¥${price}</div>
         <button class="btn btn-mini wood-btn-buy ${canAfford ? 'btn-primary' : 'wood-btn-gray'}" data-offer="${i}" ${!canAfford ? 'disabled' : ''}>
-          ${canAfford ? '购买' : '余额不足'}
+          ${canAfford ? '50' : '余额不足'}
         </button>
       </div>`
   }).join('')
@@ -331,10 +330,12 @@ function openMultiBoxModal(availOffers) {
   const { close } = openModal(`
     <div class="boxstage boxstage-multi">
       <div class="bm-modal-title">✨ 一键全购！连拆 ${boxCount} 盒盲盒...</div>
-      <div class="box3d bm-mystery-3d-box" id="box3d">
-        <div class="bm-modal-rect-box"></div>
+      <div class="box-stage-wrap">
+        <div class="box3d bm-mystery-3d-box" id="box3d">
+          <div class="bm-modal-rect-box"></div>
+        </div>
+        <div class="box-reveal-banner" id="boxRevealBanner" style="display:none;"></div>
       </div>
-      <div class="box-reveal-banner" id="boxRevealBanner" style="display:none;"></div>
       <div class="box-items box-items-multi" id="boxItems"></div>
       <button class="btn btn-primary" id="boxOk" style="visibility:hidden">全部收下并入库</button>
     </div>`, { closable: false })
@@ -403,10 +404,12 @@ function openBoxModal(cat, tierKey = 'SSS', offerIdx = null) {
   const { close } = openModal(`
     <div class="boxstage">
       <div class="bm-modal-title">拆开神秘盲盒...</div>
-      <div class="box3d bm-mystery-3d-box" id="box3d">
-        <div class="bm-modal-rect-box"></div>
+      <div class="box-stage-wrap">
+        <div class="box3d bm-mystery-3d-box" id="box3d">
+          <div class="bm-modal-rect-box"></div>
+        </div>
+        <div class="box-reveal-banner" id="boxRevealBanner" style="display:none;"></div>
       </div>
-      <div class="box-reveal-banner" id="boxRevealBanner" style="display:none;"></div>
       <div class="box-items" id="boxItems"></div>
       <button class="btn btn-primary" id="boxOk" style="visibility:hidden">收下并入库</button>
     </div>`, { closable: false })

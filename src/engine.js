@@ -179,7 +179,7 @@ export function autoPick(s, cat, n) {
 // ---------- 直播 ----------
 
 // 预设单主昵称池
-const BUYER_NAMES = [
+export const BUYER_NAMES = [
   '芝芝桃桃', '欧气满满', '小猫打呼噜', '星河碎碎冰', '今天不熬夜',
   '奶糖泡泡', '草莓大福', '追光的小鹿', '橘子汽水', '可可脆脆',
   '软绵绵的云', '暴富小锦鲤', '啵啵奶茶', '咸蛋黄泡芙', 'momo',
@@ -432,13 +432,17 @@ export function finishOrder(s, order, ctx) {
   // 本单结算金额 = 基础金额 × (1 + 幸运币对碰加成) + 欧气暴击打赏
   const totalMult = (ctx.moneyMult || 0) + (ctx.redMult || 0) + (ctx.greenMult || 0)
   const critPart = ctx.critBonus || 0
-  const price = Math.round(rawBase * (1 + totalMult)) + critPart
+  let price = Math.round(rawBase * (1 + totalMult)) + critPart
+  if (order.doublePrice) {
+    price = price * 2
+  }
+  const effectiveBase = base * (order.doublePrice ? 2 : 1)
   const fans = Math.round((5 + ctx.opened.filter((o) => o.design).length * 2 + ctx.pairs * 5) * tierOf(s.fans).fanMult) + (ctx.goldFans || 0) + (ctx.styleFans || 0)
   s.money += price
   s.fans += fans
   s.stats.earn += price
-  s.stats.earnBase = (s.stats.earnBase || 0) + base
-  s.stats.earnBuff = (s.stats.earnBuff || 0) + (price - base)
+  s.stats.earnBase = (s.stats.earnBase || 0) + effectiveBase
+  s.stats.earnBuff = (s.stats.earnBuff || 0) + (price - effectiveBase)
   s.stats.ordersDone++
   s.stats.bagsSold += nBags
   s.stats.evalBonus = (s.stats.evalBonus || 0) + ctx.evalScore
@@ -446,7 +450,7 @@ export function finishOrder(s, order, ctx) {
   s.stats.luckyHits += ctx.luckyHits
   s.stats.stockouts += ctx.stockouts
   s.stats.fansToday += fans
-  return { price, fans, trendHit, base, buffPart: price - base, critBonus: critPart }
+  return { price, fans, trendHit, base: effectiveBase, buffPart: price - effectiveBase, critBonus: critPart, doublePrice: !!order.doublePrice }
 }
 
 // ---------- 宝石市场 ----------
@@ -524,6 +528,7 @@ export function nextDay(s) {
     saleDiscount: 0.5, // 5折今日特价
   }
   s.streamsLeft = STREAMS_PER_DAY
+  s.adBoostUsedToday = false // 每日重置投流次数
   s.stats = null
   s.shop = rollShop(s)
   rollGemMarket(s)

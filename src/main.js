@@ -51,6 +51,7 @@ function migrate(s) {
     }
   }
   if (!Array.isArray(s.heldOrders)) s.heldOrders = []
+  s.adBoostUsedToday = !!s.adBoostUsedToday
   return s
 }
 

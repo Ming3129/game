@@ -19,6 +19,7 @@ export function freshState() {
     vault: [],        // 限定饰品 { uid, designId, gem, price }
     gems: [],         // 待镶嵌宝石 { gem, price }
     shop: [],         // 今日商店盲盒 { cat, tier, sold }（每天随机刷新）
+    adBoostUsedToday: false, // 今日是否已花钱投流（每日限1次）
     stats: null,      // 当日直播统计（跨场次累计，nextDay 清空）
     screen: 'intro',  // intro | day | live | settle
     dayTab: 'shop',   // 日间页签：shop | pack | codex | gem
