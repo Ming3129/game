@@ -178,8 +178,8 @@ function renderShop(body) {
             <span class="rr-ic" style="color:${RARITIES[d.rarity].color};display:inline-flex;align-items:center;">${icon(d, 16)}</span>
             <div class="rr-name-wrap">
               <span class="rr-name">${d.name}</span>
-              ${isTrendStyle ? '<span class="rr-badge-trend">🔥 风向款</span>' : ''}
-              ${isSale ? '<span class="rr-badge-sale">🏷️ 今日特价 5折</span>' : ''}
+              ${isTrendStyle ? '<span class="rr-badge-trend">风向款</span>' : ''}
+              ${isSale ? '<span class="rr-badge-sale">今日特价 5折</span>' : ''}
             </div>
             <span class="rr-stock">库存 ${s.stock[d.id] || 0}</span>
             <span class="rr-price">

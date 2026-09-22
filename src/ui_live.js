@@ -1,7 +1,7 @@
 // 直播界面：三区布局（直播画面 / 展示 / 待拆）、先拆完再对对碰、订单色、收获弹窗、直播热度。
 import { getState, setState } from './state.js'
 import {
-  CATS, CAT_KEYS, COINS, COIN_KEYS, RARITIES, DANMAKU, ORDER_BASE, ORDER_PER_BAG, TREND_MULT,
+  CATS, CAT_KEYS, COINS, COIN_KEYS, STANDARD_COIN_KEYS, RARITIES, DANMAKU, ORDER_BASE, ORDER_PER_BAG, TREND_MULT,
   GEMS, DESIGNS, designById, GUARANTEE_MIN, STREAMS_PER_DAY, HEAT_START_RATE, HEAT_FAN_BONUS,
   AD_BOOST_FANS, AD_BOOST_COST, AD_BOOST_HEAT_MULT, tierOf,
 } from './data.js'
@@ -98,7 +98,8 @@ const AUDIENCE_NAMES = [
   '棉花糖', '布丁豆豆', '焦糖布蕾', '快乐小羊', '奶茶续命选手', 
   '良良', '小熊软糖', '冰摇红莓', '海盐芝士', '旺仔牛奶',
   '山楂气泡', '风铃草', '白桃乌龙', '云朵舒芙蕾', '星星糖',
-  '抹茶拿铁', '栗子蛋糕', '小确幸', '偷得浮生', '晚风温柔'
+  '抹茶拿铁', '栗子蛋糕', '小确幸', '偷得浮生', '晚风温柔',
+  '拿铁', '可爱徐宝'
 ]
 
 function getRandomAudience() {
@@ -287,7 +288,9 @@ function promptAdBoostModal(stage, onDone) {
         type: 'bags',
         cat: promoCat,
         size: promoSize,
-        lucky: pick(COIN_KEYS),
+        lucky: pick(STANDARD_COIN_KEYS),
+        destinyColor: null,
+        isDestinyOrder: false,
         buyerName: '🔥推广贵宾·' + pick(BUYER_NAMES),
         doublePrice: true,
         isPromotion: true,
@@ -730,7 +733,9 @@ function nextOrder(stage) {
         type: 'bags',
         cat: o.cat,
         size: o.size,
-        lucky: o.lucky,
+        lucky: o.lucky || (o.isDestinyOrder ? null : pick(STANDARD_COIN_KEYS)),
+        destinyColor: null,
+        isDestinyOrder: false,
         held: true,
         buyerName: o.buyerName,
       })
@@ -766,6 +771,20 @@ function nextOrder(stage) {
         </div>
         <div class="oc-price">预估 <b class="${o.doublePrice ? 'promo-gold' : ''}">¥${est}</b></div>
       </div>
+      <div class="oc-tags-bar" style="display:flex;gap:8px;margin:8px 0 14px 0;flex-wrap:wrap;">
+        ${o.isDestinyOrder ? `
+          <span class="oc-chip destiny-chip" title="✨本场专属天选单！单主不预先指定命中色，抽到的第一枚硬币颜色即为单主天选命中色，首袋及后续拆中自动加拆盲袋！">
+            ✨ 本场天选单 <span class="destiny-unrevealed-badge">❓ 首袋揭晓</span>
+          </span>
+        ` : (o.lucky ? `
+          <span class="oc-chip order-lucky-chip" title="🎯单主指定命中色！本单每拆中一枚【${COINS[o.lucky].name}】色硬币，自动加拆 1 袋盲袋！">
+            🎯 单主命中色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> <span class="destiny-status-text">命中+1袋</span>
+          </span>
+        ` : '')}
+        <span class="oc-chip dim" title="拆袋硬币在木盘凑成对时，享受今日风向幸运色专属对碰加成">
+          今日幸运色 <i class="coin-dot sm" style="--cc:${COINS[s.trend.lucky].hex}">${COINS[s.trend.lucky].name}</i>
+        </span>
+      </div>
       <div class="oc-btns">
         <button class="btn btn-primary btn-big" id="ocGo">接单备货</button>
         <button class="btn btn-ghost" id="ocSkip">下播</button>
@@ -778,13 +797,48 @@ function nextOrder(stage) {
   popIn(stage.querySelector('.order-card'))
 }
 
+// 实时更新顶部订单内容与已拆进度
+function updateOrderProgress() {
+  const o = session?.order
+  const ctx = session?.ctx
+  if (!o || !ctx) return
+  const queue = document.getElementById('lvQueue')
+  const pendingInDom = queue ? queue.querySelectorAll('.bag:not(.opened):not(.stockout)').length : 0
+  const openedTotal = ctx.opened.length
+  const totalBags = Math.max(o.size, openedTotal + pendingInDom)
+
+  const openedEl = document.getElementById('obOpenedNum')
+  const totalEl = document.getElementById('obTotalNum')
+
+  if (openedEl) openedEl.textContent = openedTotal
+  if (totalEl) totalEl.textContent = totalBags
+}
+
 // ---------- 三区拆袋舞台 ----------
 
 function renderBagArea(stage) {
   const o = session.order
   const s = getState()
+  const trendHit = o.cat === s.trend.cat
+
   stage.innerHTML = `
     <div class="bag-area3">
+      <div class="lv-order-bar" id="lvOrderBar">
+        <div class="lv-ob-left">
+          <span class="lv-ob-buyer">${o.doublePrice ? '🔥 ' : ''}${o.buyerName || '单主'}</span>
+          <span class="lv-ob-cat">${icon(o.cat, 18)} <b>${CATS[o.cat].name}盲袋</b></span>
+          <span class="lv-ob-spec">原单 ${o.size} 袋</span>
+          ${o.doublePrice ? '<span class="oc-tag-promo">🔥双倍推流</span>' : ''}
+          ${o.isDestinyOrder ? '<span class="oc-tag-destiny">✨天选单</span>' : ''}
+          ${!o.isDestinyOrder && o.lucky ? `<span class="oc-tag-hit">🎯命中:${COINS[o.lucky].name}</span>` : ''}
+          ${trendHit ? '<span class="oc-tag-trend">风向款</span>' : ''}
+        </div>
+        <div class="lv-ob-right">
+          <div class="lv-ob-count">
+            已拆 <b class="ob-num" id="obOpenedNum">0</b> / <span class="ob-total" id="obTotalNum">${o.size}</span> 袋
+          </div>
+        </div>
+      </div>
       <section class="lv-cam">
         <div class="lv-tag">直播画面</div>
         <div class="live-feed-left" id="liveEventFeed"></div>
@@ -794,7 +848,15 @@ function renderBagArea(stage) {
       <section class="lv-show">
         <div class="lv-tag">展示</div>
         <div class="show-colors">
-          <span class="oc-chip" title="拆到此色硬币本单多拆一袋">订单色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i></span>
+          ${o.isDestinyOrder ? `
+            <span class="oc-chip destiny-chip ${o.destinyColor ? 'active-destiny' : ''}" id="lvDestinyChip" title="✨本场专属天选单！单主不指定命中色，抽到的第一枚硬币颜色即为单主天选命中色，后续拆中自动加拆！">
+              ${o.destinyColor ? `🎯 天选命中色 <i class="coin-dot sm" style="--cc:${COINS[o.destinyColor].hex}">${COINS[o.destinyColor].name}</i> <span class="destiny-status-text">命中+1袋</span>` : `✨ 单主天选色 <span class="destiny-status-text">❓ 首袋揭晓</span>`}
+            </span>
+          ` : (o.lucky ? `
+            <span class="oc-chip order-lucky-chip" id="lvOrderLuckyChip" title="🎯单主指定命中色！每拆中【${COINS[o.lucky].name}】色硬币，自动加拆 1 袋盲袋！">
+              🎯 单主命中色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> <span class="destiny-status-text">命中+1袋</span>
+            </span>
+          ` : '')}
           <span class="oc-chip dim" id="lvLuckyColorChip" title="${COINS[s.trend.lucky].name}色硬币对碰：${COINS[s.trend.lucky].pair}">今日幸运色 <i class="coin-dot sm" style="--cc:${COINS[s.trend.lucky].hex}">${COINS[s.trend.lucky].name}</i> <span id="lvLuckyBuffText">${COINS[s.trend.lucky].pair}</span></span>
         </div>
         <div class="lv-mid">
@@ -810,6 +872,7 @@ function renderBagArea(stage) {
     </div>`
   const row = stage.querySelector('#lvQueue')
   for (let i = 0; i < o.size; i++) row.appendChild(makeBag(o, false))
+  updateOrderProgress()
 
   // 直播开场：从 DANMAKU.enter 里选两三个弹幕
   const isFirstOrder = !session.streamStarted
@@ -820,10 +883,31 @@ function renderBagArea(stage) {
   }
 
   // 新的一单：单主发弹幕打招呼 + 观众弹幕
-  spawnBuyerDanmaku(`主播好！我来蹲我的${CATS[o.cat].name}盲袋啦！求大隐藏求对碰！`, isFirstOrder ? 900 : 300)
-  const orderCount = Math.floor(Math.random() * 2) + 3 // 3 或 4 个
-  const orderDelay = isFirstOrder ? 1100 : 450
-  spawnDanmaku(DANMAKU.order, orderCount, orderDelay)
+  if (o.isDestinyOrder) {
+    spawnBuyerDanmaku(`主播好！我来蹲我的${CATS[o.cat].name}盲袋啦！这单我是本场天选单，看第一袋给我出什么天选命中色！`, isFirstOrder ? 900 : 300)
+    spawnDanmaku(['哇！这单是本场天选单！', '天选单来了！冲冲冲！', '看看能出什么天选色'], 2, isFirstOrder ? 1100 : 450)
+  } else if (o.lucky) {
+    const luckyName = COINS[o.lucky].name
+    const normalGreetings = [
+      `主播好！我来蹲我的${CATS[o.cat].name}盲袋啦！我许愿的命中色是【${luckyName}】色，多出点命中加拆！`,
+      `主播开拆吧！我的${CATS[o.cat].name}盲袋，希望能多出【${luckyName}】色命中色！`,
+      `来了来了！我的命中色是【${luckyName}】色，主播帮我狠狠拆中加袋！`,
+    ]
+    spawnBuyerDanmaku(pick(normalGreetings), isFirstOrder ? 900 : 300)
+    const orderCount = Math.floor(Math.random() * 2) + 3
+    const orderDelay = isFirstOrder ? 1100 : 450
+    spawnDanmaku([`单主命中色是${luckyName}色！`, `多出${luckyName}色！`, '祝单主多中命中色！', '吸欧气！'], orderCount, orderDelay)
+  } else {
+    const normalGreetings = [
+      `主播好！我来蹲我的${CATS[o.cat].name}盲袋啦！希望能拆出大款！`,
+      `主播开拆吧！我的${CATS[o.cat].name}盲袋，求多多对对碰！`,
+      `来了来了！我的${CATS[o.cat].name}盲袋，主播手气借我用用！`,
+    ]
+    spawnBuyerDanmaku(pick(normalGreetings), isFirstOrder ? 900 : 300)
+    const orderCount = Math.floor(Math.random() * 2) + 3 // 3 或 4 个
+    const orderDelay = isFirstOrder ? 1100 : 450
+    spawnDanmaku(DANMAKU.order, orderCount, orderDelay)
+  }
 }
 
 function makeBag(o, bonus, isMilk = false) {
@@ -832,6 +916,12 @@ function makeBag(o, bonus, isMilk = false) {
   b.innerHTML = `<div class="bag-body"><div class="bag-hang-hole"></div><div class="bag-zip-strip"></div><span class="bag-cat">${icon(o.cat, 20)}</span>${isMilk ? '<em class="bag-plus milk">🍼+1</em>' : (bonus ? '<em class="bag-plus">+1</em>' : '')}</div>`
   b.onclick = () => openOne(b)
   return b
+}
+
+function addBagToQueue(queue, bag) {
+  if (!queue) return
+  queue.appendChild(bag)
+  queue.scrollTop = queue.scrollHeight
 }
 
 // 把袋从待拆区移到直播画面拆开；饰品入首饰盒（同款合并 ×N），硬币入木盘（拆完后统一对碰）
@@ -850,6 +940,7 @@ function openOne(bagEl) {
   session.heat++
   updateHeat()
   updateFoot()
+  updateOrderProgress()
 
   const mover = bagEl.cloneNode(true)
   mover.classList.remove('opening')
@@ -870,30 +961,89 @@ function openOne(bagEl) {
       spawnDanmaku(DANMAKU.stockout, 2)
       spawnLiveNotice('warn', '缺货', '缺货 · 评价 -2')
       bagEl.remove()
+      updateOrderProgress()
       checkPhase(queue)
       return
     }
 
     bagEl.remove()
     const r = RARITIES[ev.design.rarity]
-    mover.innerHTML = `
-      <div class="bag-reveal rc-${ev.design.rarity}">
+
+    const isMultiCoins = ev.isHiddenBag && ev.hiddenBagType === 'coins'
+    const isMultiDesigns = ev.isHiddenBag && ev.hiddenBagType === 'designs'
+
+    const coinsMetaHtml = (ev.allCoins || [ev.coin]).map((c) => `
+      <i class="coin-dot" style="--cc:${COINS[c].hex}">${COINS[c].name}</i>
+    `).join('')
+
+    let revealBodyHtml = ''
+    if (isMultiDesigns && ev.allDesigns) {
+      revealBodyHtml = `
+        <div class="br-multi-designs">
+          ${ev.allDesigns.map((d) => `
+            <div class="br-multi-item rc-${d.rarity}">
+              <span class="br-ic">${icon(d.cat, 16)}</span>
+              <span class="br-name">${d.name}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="br-meta">${coinsMetaHtml}</div>
+      `
+    } else {
+      revealBodyHtml = `
         <span class="br-ic">${icon(ev.design, 20)}</span>
         <span class="br-name">${ev.design.name}</span>
-        <div class="br-meta">
-          <i class="coin-dot" style="--cc:${COINS[ev.coin].hex}">${COINS[ev.coin].name}</i>
-        </div>
+        <div class="br-meta">${coinsMetaHtml}</div>
+      `
+    }
+
+    mover.innerHTML = `
+      <div class="bag-reveal rc-${ev.design.rarity} ${ev.isHiddenBag ? 'is-hidden-bag' : ''}">
+        ${revealBodyHtml}
       </div>
       <div class="bag-lucky-footer">
         <span class="br-lucky-val" title="盲袋随机欧气值">欧气 ${ev.luckyVal || 80}</span>
+        ${ev.isHiddenBag ? `<span class="br-hidden-tag">✨隐藏款·${ev.hiddenBagCount}${isMultiCoins ? '枚硬币' : '件饰品'}</span>` : ''}
         ${ev.isCrit ? '<span class="br-crit-tag">★欧气暴击</span>' : ''}
         ${ev.upgraded ? '<span class="br-upgraded-tag">✨升级款</span>' : ''}
       </div>`
+
     if (ev.design.rarity === 'legendary') sfx.legendary()
     else if (ev.design.rarity === 'epic') sfx.rare()
     else sfx.coin()
+
     const rect = mover.getBoundingClientRect()
     let hasSpecialDm = false
+
+    // 隐藏盲袋：一袋开出多件硬币或饰品
+    if (ev.isHiddenBag) {
+      sfx.legendary()
+      burst(rect.left + rect.width / 2, rect.top + rect.height / 2, ['#FF5EC8', '#FFD98E', '#5AA9FF'], 22)
+      floatText(mover, `✨ 隐藏款！${ev.hiddenBagCount}${isMultiCoins ? '枚硬币' : '件饰品'}！`, '#FFD98E', true)
+      spawnLiveNotice('gold', '✨ 隐藏盲袋！', `欧气逆天！一袋开出 ${ev.hiddenBagCount} ${isMultiCoins ? '枚硬币' : '件饰品'}！`)
+      spawnBuyerDanmaku(`天呐！一袋开出了${ev.hiddenBagCount}${isMultiCoins ? '枚硬币' : '件饰品'}！这是隐藏盲袋！太爽啦！`, 180)
+      spawnDanmaku(['哇！居然是一袋多开！', '隐藏盲袋！！', '单主手气逆天了！', '隐藏款太香了！'], 2)
+      hasSpecialDm = true
+    }
+
+    // 天选色：单主不指定命中色，抽到的第一枚硬币颜色就是单主的命中色
+    if (ev.isFirstBag) {
+      const destinyKey = ev.firstCoin
+      const chipEl = document.getElementById('lvDestinyChip')
+      if (chipEl) {
+        chipEl.classList.add('active-destiny')
+        chipEl.innerHTML = `🎯 天选命中色 <i class="coin-dot sm" style="--cc:${COINS[destinyKey].hex}">${COINS[destinyKey].name}</i> <span class="destiny-status-text">🎯 命中+1袋</span>`
+      }
+
+      sfx.legendary()
+      burst(rect.left + rect.width / 2, rect.top + rect.height / 2, [COINS[destinyKey].hex || '#FF5A5A', '#FFD98E', '#FFFFFF'], 24)
+      spawnLiveNotice('buff', '🎯 天选命中色揭晓！', `首袋抽中【${COINS[destinyKey].name}】色！确立为单主本单命中色，首袋即加拆一袋！`)
+      floatText(mover, `🎯 天选【${COINS[destinyKey].name}】+1袋`, '#FF5A5A', true)
+      spawnBuyerDanmaku(`哇啊啊啊！首袋抽中了【${COINS[destinyKey].name}】色！这就是我的天选命中色！开局直接加一袋，冲！`, 120)
+      spawnDanmaku(['【' + COINS[destinyKey].name + '】色天选！', '首袋定天选，直接送一袋！', '天选之子！', '后面多来点' + COINS[destinyKey].name + '色！'], 3)
+      if (queue) addBagToQueue(queue, makeBag(o, true))
+      hasSpecialDm = true
+    }
 
     if (ev.isCrit) {
       spawnLiveNotice('bag', '★ 欧气暴击！', `欧气值 ${ev.luckyVal} · 单主追加小费 +¥10！`)
@@ -919,30 +1069,45 @@ function openOne(bagEl) {
       spawnDanmaku(['风向款拆到了！', '就是这个！买爆！'], 2)
       hasSpecialDm = true
     }
-    if (ev.luckyHit) {
-      sfx.coin()
-      const colorLabel = ev.coin.startsWith('secret') ? COINS[ev.coin].name : `${COINS[ev.coin].name}色`
-      spawnLiveNotice('bag', '+1袋', `订单色加持 · ${colorLabel}`)
-      spawnBuyerDanmaku('哇！我的订单幸运色！加拆一袋！', 200)
-      spawnDanmaku(DANMAKU.lucky, 2)
-      hasSpecialDm = true
-      // 幸运色命中直接补加一袋入待拆区，避免异步相减时序产生偏差
-      if (queue) queue.appendChild(makeBag(o, true))
+    if (ev.luckyHit && !ev.isFirstBag) {
+      if (o.isDestinyOrder) {
+        sfx.coin()
+        const colorLabel = COINS[o.destinyColor]?.name || ''
+        burst(rect.left + rect.width / 2, rect.top + rect.height / 2, [COINS[o.destinyColor]?.hex || '#FF5A5A', '#FFFFFF'], 14)
+        spawnLiveNotice('buff', '🎯 命中天选色！', `拆中天选命中色【${colorLabel}】· 加拆 1 袋盲袋！`)
+        spawnBuyerDanmaku(`又拆中我的天选【${colorLabel}】色啦！再加一袋！手气太棒啦！`, 180)
+        spawnDanmaku(['命中天选色！', '天选色又加一袋！', '太欧了！'], 2)
+        floatText(mover, `🎯 命中天选 +1袋`, '#FF5A5A', true)
+        hasSpecialDm = true
+        // 命中直接补加一袋入待拆区
+        if (queue) addBagToQueue(queue, makeBag(o, true))
+      } else if (o.lucky) {
+        sfx.coin()
+        const colorLabel = COINS[o.lucky]?.name || ''
+        burst(rect.left + rect.width / 2, rect.top + rect.height / 2, [COINS[o.lucky]?.hex || '#FF7EB6', '#FFFFFF'], 14)
+        spawnLiveNotice('buff', '🎯 命中单主命中色！', `拆中单主指定命中色【${colorLabel}】· 加拆 1 袋盲袋！`)
+        spawnBuyerDanmaku(`太棒啦！拆中我的命中【${colorLabel}】色啦！加拆一袋冲冲冲！`, 180)
+        spawnDanmaku(['命中单主命中色！', '命中色加一袋！', '手气真好！'], 2)
+        floatText(mover, `🎯 命中加拆 +1袋`, '#FF7EB6', true)
+        hasSpecialDm = true
+        // 命中直接补加一袋入待拆区
+        if (queue) addBagToQueue(queue, makeBag(o, true))
+      }
     }
 
     // 小隐藏：加一袋盲袋
-    if (ev.coin === 'secret_s') {
+    if (ev.isSecretSmall || ev.coin === 'secret_s' || (ev.allCoins && ev.allCoins.includes('secret_s'))) {
       sfx.coin()
       burst(rect.left + rect.width / 2, rect.top + rect.height / 2, ['#C2D1E5', '#FFFFFF'], 14)
       spawnLiveNotice('bag', '✨ 小隐藏', '小隐藏加持 · 加拆 1 袋盲袋！')
       spawnBuyerDanmaku('哇啊啊啊出小隐藏了！！加拆一袋！太欧啦！', 150)
       spawnDanmaku(DANMAKU.secret_s, 2, 250)
       hasSpecialDm = true
-      if (queue) queue.appendChild(makeBag(o, true))
+      if (queue) addBagToQueue(queue, makeBag(o, true))
     }
 
     // 大隐藏：自选款式（通过两到三个选项与单主沟通）
-    if (ev.coin === 'secret_b') {
+    if (ev.isSecretBig || ev.coin === 'secret_b' || (ev.allCoins && ev.allCoins.includes('secret_b'))) {
       sfx.legendary()
       burst(rect.left + rect.width / 2, rect.top + rect.height / 2, ['#FF5EC8', '#FFD98E', '#FFFFFF'], 22)
       spawnLiveNotice('rare', '👑 大隐藏！', '抽中大隐藏 · 开启单主自选款式沟通！')
@@ -951,13 +1116,19 @@ function openOne(bagEl) {
       hasSpecialDm = true
 
       renderBoxItems()
-      addToTray(ev.coin)
+      ;(ev.allCoins || [ev.coin]).forEach((c) => addToTray(c))
+      updateOrderProgress()
 
       // 弹出沟通弹窗
       openSecretDialogueModal(o, ctx, ev, (chosenDesign, buyerReply) => {
         ev.design = chosenDesign
         const lastOpened = ctx.opened[ctx.opened.length - 1]
-        if (lastOpened) lastOpened.design = chosenDesign
+        if (lastOpened) {
+          lastOpened.design = chosenDesign
+          if (lastOpened.designs && lastOpened.designs.length > 0) {
+            lastOpened.designs[0] = chosenDesign
+          }
+        }
         renderBoxItems()
 
         sfx.legendary()
@@ -977,6 +1148,7 @@ function openOne(bagEl) {
           }
         }
 
+        updateOrderProgress()
         checkPhase(queue)
       })
       return
@@ -989,7 +1161,8 @@ function openOne(bagEl) {
     // 饰品入首饰盒（同款合并 ×N）
     renderBoxItems()
     // 硬币入木盘（此时不成对，拆完后统一结算）
-    addToTray(ev.coin)
+    ;(ev.allCoins || [ev.coin]).forEach((c) => addToTray(c))
+    updateOrderProgress()
 
     // 检查本场直播突发随机事件（每场[0, 1]次，10%发生几率，90%不发生，涨跌几率五五分）
     session.totalBagsOpened = (session.totalBagsOpened || 0) + 1
@@ -1014,10 +1187,13 @@ function renderBoxItems() {
   const byId = {}
   const orderIds = []
   for (const o of ctx.opened) {
-    if (!o.design) continue
-    if (!byId[o.design.id]) { byId[o.design.id] = { d: o.design, n: 0, style: false } ; orderIds.push(o.design.id) }
-    byId[o.design.id].n++
-    if (s_trendStyle() === o.design.id) byId[o.design.id].style = true
+    const dList = o.designs || (o.design ? [o.design] : [])
+    for (const d of dList) {
+      if (!d) continue
+      if (!byId[d.id]) { byId[d.id] = { d, n: 0, style: false }; orderIds.push(d.id) }
+      byId[d.id].n++
+      if (s_trendStyle() === d.id) byId[d.id].style = true
+    }
   }
   box.innerHTML = orderIds.length === 0
     ? '<span class="lv-empty">空</span>'
@@ -1120,10 +1296,12 @@ function syncTrayCoins() {
     empty.className = 'lv-empty'
     empty.textContent = '空'
     tray.appendChild(empty)
+  } else {
+    tray.scrollTop = tray.scrollHeight
   }
 }
 
-// 阶段推进：拆完 → 放大木盘拖动对对碰 → 还有袋继续拆 / 保底补拆 / 完成订单
+// 阶段推进：拆完 → 放大木盘拖动对对碰 → 检查全家福 → 还有袋继续拆 / 保底补拆 / 完成订单
 function checkPhase(queue) {
   const ctx = session.ctx
   if (!queue || ctx.done) return
@@ -1132,7 +1310,8 @@ function checkPhase(queue) {
 
   // 若待拆区所有袋子已拆完，但后台队列计数大于0，补齐待拆区
   if (ctx.queue > 0) {
-    for (let i = 0; i < ctx.queue; i++) queue.appendChild(makeBag(session.order, true))
+    for (let i = 0; i < ctx.queue; i++) addBagToQueue(queue, makeBag(session.order, true))
+    updateOrderProgress()
     return
   }
 
@@ -1148,7 +1327,63 @@ function checkPhase(queue) {
     return
   }
 
+  // 全家福判定：如果木盘上剩下的硬币中每个颜色都有且只有一个(不包括大小隐藏)，触发全家福，弹出弹窗：“全家福，加三袋”
+  if (checkFamilyPortrait(queue)) {
+    return
+  }
+
   renderExtra(queue)
+}
+
+// 全家福判定：木盘上剩下的硬币中每个颜色都有且只有一个(不包括大小隐藏)
+function checkFamilyPortrait(queue) {
+  const ctx = session.ctx
+  if (!ctx || ctx.familyPortraitAwarded) return false
+  // 检查红、金、蓝、紫、绿5种基础颜色，是否都有且恰好各有 1 枚
+  const isFamily = STANDARD_COIN_KEYS.every((k) => (ctx.tally[k] || 0) === 1)
+  if (!isFamily) return false
+
+  showFamilyPortraitModal(queue)
+  return true
+}
+
+function showFamilyPortraitModal(queue) {
+  const ctx = session.ctx
+  ctx.familyPortraitAwarded = true
+  sfx.legendary()
+
+  const coinsHtml = STANDARD_COIN_KEYS.map((k) => `
+    <div class="family-coin-item">
+      <i class="coin-dot" style="--cc:${COINS[k].hex}">${COINS[k].name}</i>
+      <span>${COINS[k].name}色</span>
+    </div>
+  `).join('')
+
+  const { close } = openModal(`
+    <h3 class="m-title">🎉 全家福，加三袋！</h3>
+    <div class="family-modal-content">
+      <div class="family-coins-row">${coinsHtml}</div>
+      <p class="family-desc">木盘上剩下的硬币中，红、金、蓝、紫、绿<b>每个颜色都有且只有一个</b>！集齐五色基础硬币，达成【全家福】！</p>
+      <div class="family-award-banner">🎁 全家福达成 · 加拆 <b>3</b> 袋盲袋！</div>
+      <button class="btn btn-primary btn-big" id="familyGo">开心收下，加三袋</button>
+    </div>
+  `, { closable: false })
+
+  burst(window.innerWidth / 2, window.innerHeight / 2.6, ['#FF5A5A', '#FFD98E', '#5AA9FF', '#C77DFF', '#7DE2D1'], 32)
+  spawnLiveNotice('gold', '🎊 全家福达成！', '木盘五色齐聚各一枚 · 全家福加三袋！')
+  spawnBuyerDanmaku('啊啊啊居然是全家福！！！太整齐了吧！全家福加三袋冲冲冲！', 100)
+  spawnDanmaku(['全家福达成！！', '五福临门！', '全家福，加三袋！太欧啦！', '整整齐齐一家人！'], 3)
+
+  document.getElementById('familyGo').onclick = () => {
+    sfx.tap()
+    close()
+    for (let i = 0; i < 3; i++) {
+      addBagToQueue(queue, makeBag(session.order, true))
+    }
+    updateOrderProgress()
+    const active = document.getElementById('lvActive')
+    if (active) active.innerHTML = '<div class="lv-hint family-hint">🎉 全家福达成！已加拆 3 袋放入待拆区</div>'
+  }
 }
 
 // 放大木盘：玩家拖动硬币进行对对碰
@@ -1457,7 +1692,7 @@ function showPairModal(paired, queue) {
   const { close } = openModal(`
     <h3 class="m-title">对对碰 × ${paired.length}</h3>
     <div class="pair-list">${rows}</div>
-    ${cleared ? '<div class="clear-banner">🎉 清盘！另加三袋盲袋</div>' : ''}
+    ${cleared ? '<div class="clear-banner">清盘！另加三袋盲袋</div>' : ''}
     <p class="pair-note">本轮加拆 ${ctx.queue} 袋${luckyPairs.length ? `；触发 ${luckyPairs.length} 次今日幸运色 buff！` : ''}${cleared ? '' : '；配对成功的硬币已收走，没凑成对的原地留着等下一轮'}</p>
     <button class="btn btn-primary btn-big" id="pairGo">继续拆袋</button>
   `, { closable: false })
@@ -1477,7 +1712,8 @@ function showPairModal(paired, queue) {
     const pairColors = [...new Set(paired.map(toColorName))].join('、')
     spawnLiveNotice('pair', '对碰', `${pairColors} · 加拆 ${ctx.queue} 袋`)
     if (cleared) spawnLiveNotice('buff', '清盘', '另加三袋！')
-    for (let i = 0; i < ctx.queue; i++) queue.appendChild(makeBag(session.order, true))
+    for (let i = 0; i < ctx.queue; i++) addBagToQueue(queue, makeBag(session.order, true))
+    updateOrderProgress()
   }
 }
 
@@ -1497,10 +1733,11 @@ function renderExtra(queue) {
     btn.textContent = `补拆一袋（保底 ${ctx.opened.length}/${GUARANTEE_MIN}）`
     btn.onclick = () => {
       session.ctx.queue++
-      queue.appendChild(makeBag(session.order, true))
+      addBagToQueue(queue, makeBag(session.order, true))
       sfx.tap()
       spawnLiveNotice('bag', '保底', `保底机制 · 补拆一袋`)
       extra.innerHTML = ''
+      updateOrderProgress()
     }
     extra.appendChild(btn)
     return
@@ -1512,7 +1749,7 @@ function renderExtra(queue) {
 
   const milkCount = ctx.milkCount || 0
   const milkBtn = document.createElement('button')
-  milkBtn.className = 'btn btn-milk'
+  milkBtn.className = 'btn btn-milk btn-big'
   milkBtn.id = 'lvMilkBtn'
   milkBtn.innerHTML = `🍼 奶一口${milkCount > 0 ? ` <span class="milk-badge">×${milkCount}</span>` : '<span class="milk-sub">+1袋</span>'}`
   milkBtn.title = '为主播的单主额外加拆一袋盲袋！'
@@ -1520,10 +1757,11 @@ function renderExtra(queue) {
     ctx.milkCount = (ctx.milkCount || 0) + 1
     session.ctx.queue++
     const milkBag = makeBag(session.order, true, true)
-    queue.appendChild(milkBag)
+    addBagToQueue(queue, milkBag)
     sfx.fans()
     session.heat = (session.heat || 0) + 2
     updateTopbarNumbers(getState())
+    updateOrderProgress()
 
     spawnLiveNotice('buff', '奶一口', `主播给单主 ${session.order.buyerName || '贵宾'} 豪横奶了一袋！`)
     floatText(milkBag, '🍼 奶一口 +1袋！', '#FF7EB6', true)
@@ -1580,14 +1818,21 @@ function completeOrder(stage) {
   // 收获清单：首饰聚合 ×N
   const byId = {}
   for (const o of session.ctx.opened) {
-    if (!o.design) continue
-    if (!byId[o.design.id]) byId[o.design.id] = { d: o.design, n: 0 }
-    byId[o.design.id].n++
+    const dList = o.designs || (o.design ? [o.design] : [])
+    for (const d of dList) {
+      if (!d) continue
+      if (!byId[d.id]) byId[d.id] = { d, n: 0 }
+      byId[d.id].n++
+    }
   }
   const jewels = Object.values(byId)
   const coins = {}
   for (const o of session.ctx.opened) {
-    if (o.coin) coins[o.coin] = (coins[o.coin] || 0) + 1
+    const cList = o.coins || (o.coin ? [o.coin] : [])
+    for (const c of cList) {
+      if (!c) continue
+      coins[c] = (coins[c] || 0) + 1
+    }
   }
   const stockouts = session.ctx.stockouts
   const { close } = openModal(`
@@ -1613,6 +1858,9 @@ function completeOrder(stage) {
         ${r.buffPart ? `<div><span>buff 加成</span><b class="hv-fans">+¥${r.buffPart}</b></div>` : ''}
         <div><span>营收</span><b class="hv-earn">+¥${r.price}</b></div>
         <div><span>粉丝</span><b class="hv-fans">+${r.fans}</b></div>
+        ${session.order.isDestinyOrder && session.ctx.destinyHits ? `<div><span>本场天选 (${COINS[session.order.destinyColor]?.name || ''}色)</span><b class="hv-destiny">🎯 命中 ${session.ctx.destinyHits} 次 (+${session.ctx.destinyHits}袋)</b></div>` : ''}
+        ${!session.order.isDestinyOrder && session.order.lucky && session.ctx.luckyHits ? `<div><span>单主命中 (${COINS[session.order.lucky]?.name || ''}色)</span><b class="hv-destiny">🎯 命中 ${session.ctx.luckyHits} 次 (+${session.ctx.luckyHits}袋)</b></div>` : ''}
+        ${session.ctx.familyPortraitAwarded ? '<div><span>全家福</span><b class="hv-promo">🎉 加三袋</b></div>' : ''}
         ${session.ctx.pairs ? `<div><span>对对碰</span><b class="hv-base">${session.ctx.pairs} 次</b></div>` : ''}
         ${session.ctx.milkCount ? `<div><span>主播奶袋</span><b class="hv-milk">🍼 ${session.ctx.milkCount} 袋</b></div>` : ''}
       </div>

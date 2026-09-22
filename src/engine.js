@@ -1,6 +1,6 @@
 // 游戏引擎：开盒、装袋、直播订单与对对碰、下播结算。纯规则层，不碰 DOM。
 import {
-  DESIGNS, RARITIES, BOXES, BOX_KEYS, COINS, COIN_KEYS, CAT_KEYS,
+  DESIGNS, RARITIES, BOXES, BOX_KEYS, COINS, COIN_KEYS, STANDARD_COIN_KEYS, CAT_KEYS,
   tierOf, GEMS, GEM_PRICE_MIN, GEM_PRICE_MAX, GEM_MARKET_SIZE,
   LIMITED_ORDER_BASE, LIMITED_FAN_BONUS, ORDER_BASE, ORDER_PER_BAG,
   TREND_MULT, EVAL_LEVELS, UNLOCK_GRANT, designById,
@@ -183,7 +183,8 @@ export const BUYER_NAMES = [
   '芝芝桃桃', '欧气满满', '小猫打呼噜', '星河碎碎冰', '今天不熬夜',
   '奶糖泡泡', '草莓大福', '追光的小鹿', '橘子汽水', '可可脆脆',
   '软绵绵的云', '暴富小锦鲤', '啵啵奶茶', '咸蛋黄泡芙', 'momo',
-  '甜甜圈圈', '柠檬气泡', '月亮邮局', '薄荷小调', '落日飞车'
+  '甜甜圈圈', '柠檬气泡', '月亮邮局', '薄荷小调', '落日飞车', '鱼宝',
+  '栗子', '雨水', '小羽毛'
 ]
 
 // 生成整场直播的订单计划：品类纯随机（从有货品类中抽），保底一单为当日风向品类
@@ -219,9 +220,35 @@ export function planStream(s) {
     if (size <= 0) continue
     capLeft -= size
     const buyerName = pick(BUYER_NAMES)
-    // 订单幸运色每单随机（可与今日幸运色相同），带单主昵称
-    orders.push({ type: 'bags', cat, size, lucky: pick(COIN_KEYS), buyerName })
+    // 默认订单拥有单主命中色（红、金、蓝、紫、绿其一）
+    orders.push({
+      type: 'bags',
+      cat,
+      size,
+      lucky: pick(STANDARD_COIN_KEYS),
+      destinyColor: null,
+      isDestinyOrder: false,
+      buyerName,
+    })
   }
+
+  // 每次直播最多出现一次天选色订单（挑选至多 1 笔盲袋订单作为本场专属天选单）
+  // 订单有天选色就没有命中色，普通订单正常保留单主命中色
+  const bagOrders = orders.filter((o) => o.type === 'bags')
+  bagOrders.forEach((bo) => {
+    bo.isDestinyOrder = false
+    bo.destinyColor = null
+    if (!bo.lucky) bo.lucky = pick(STANDARD_COIN_KEYS)
+  })
+  if (bagOrders.length > 0) {
+    // 优先选择库存充足的订单，确保玩家在该场直播中能完整体验到天选单
+    const inStockBags = bagOrders.filter((bo) => (s.packed[bo.cat] || []).length >= bo.size)
+    const targetOrder = inStockBags.length > 0 ? pick(inStockBags) : pick(bagOrders)
+    targetOrder.isDestinyOrder = true
+    targetOrder.lucky = null // 有天选色就没有命中色
+    targetOrder.destinyColor = null
+  }
+
   return orders
 }
 
@@ -234,12 +261,17 @@ export function newOrderSession(order) {
     redMult: 0,         // 兼容字段
     greenMult: 0,       // 兼容字段
     styleFans: 0,       // 风向指定款式拆中数（每件粉丝 +1）
-    opened: [],         // 已拆 { design, coin, slot: 'order'|'bonus'|'stockout' }
+    opened: [],         // 已拆 { design, coin, slot: 'order'|'bonus'|'stockout', ... }
     buffs: [],          // 本单触发的 buff（供展示）
     pairs: 0, luckyHits: 0, stockouts: 0,
     goldFans: 0, evalScore: 0,
     heatAdd: 0,         // 热度加成
     done: false,
+    firstCoin: null,
+    destinyColor: order.destinyColor || null,
+    destinyHit: false,
+    destinyHits: 0,
+    familyPortraitAwarded: false,
   }
 }
 
@@ -320,45 +352,139 @@ export function openBag(s, order, ctx) {
     ctx.critBonus = (ctx.critBonus || 0) + 10 // 欧气暴击：单主多给小费 +¥10
   }
 
-  ctx.opened.push({ slot: isBonus ? 'bonus' : 'order', design, coin, luckyVal, isCrit, upgraded })
-  const ev = { slot: isBonus ? 'bonus' : 'order', design, coin, bonus: isBonus, luckyHit: false, luckyVal, isCrit, upgraded }
+  // 隐藏款盲袋判定：约 12% 概率开出「隐藏盲袋」—— 一袋内含 2~3 枚硬币或 2~3 件饰品
+  let isHiddenBag = false
+  let hiddenBagType = null
+  let hiddenBagCount = 1
+  const extraDesigns = []
+  const extraCoins = []
 
-  // 稀有度统计（评价分只算紫币加成，史诗/传说单独计数）
-  if (design && (design.rarity === 'epic' || design.rarity === 'legendary')) {
-    if (!s.stats.bestPull || RARITIES[design.rarity].bonus > RARITIES[s.stats.bestPull.rarity].bonus) {
-      s.stats.bestPull = { rarity: design.rarity, name: design.name }
+  if (design && coin && Math.random() < 0.12) {
+    isHiddenBag = true
+    const isMultiCoins = Math.random() < 0.50
+    // 数量：75% 几率 2个（双黄蛋），25% 几率 3个（三黄暴击）
+    const count = Math.random() < 0.25 ? 3 : 2
+    hiddenBagCount = count
+    if (isMultiCoins) {
+      hiddenBagType = 'coins'
+      for (let i = 0; i < count - 1; i++) {
+        extraCoins.push(pick(COIN_KEYS))
+      }
+    } else {
+      hiddenBagType = 'designs'
+      const pool = DESIGNS.filter((d) => d.cat === order.cat && d.rarity !== 'limited')
+      for (let i = 0; i < count - 1; i++) {
+        extraDesigns.push(pool.length > 0 ? pick(pool) : DESIGNS[0])
+      }
     }
-    s.stats.epicsPulled++
   }
 
-  // 风向指定款式：拆中一件粉丝 +1
-  if (design && s.trend.style && design.id === s.trend.style) {
-    ctx.styleFans = (ctx.styleFans || 0) + 1
-    ev.styleHit = true
-  }
+  const allDesigns = [design, ...extraDesigns]
+  const allCoins = [coin, ...extraCoins]
 
-  // 幸运色：订单加一袋
-  if (coin === order.lucky) {
-    ctx.luckyHits++
+  // 天选色规则：单主不指定命中色，抽到的第一枚硬币颜色就是单主的命中色（每次直播最多出现一次，仅在本场专属天选单生效）
+  let isFirstBag = false
+  let firstCoin = null
+  let destinyHit = false
+
+  if (order.isDestinyOrder && ctx.opened.length === 0) {
+    isFirstBag = true
+    firstCoin = allCoins[0]
+    ctx.firstCoin = firstCoin
+    // 抽到的第一枚硬币颜色确立为单主的命中色
+    order.destinyColor = firstCoin
+    order.lucky = firstCoin
+    ctx.destinyColor = firstCoin
+    destinyHit = true
+    ctx.destinyHit = true
     ctx.queue++
-    ev.luckyHit = true
+    ctx.destinyHits = (ctx.destinyHits || 0) + 1
   }
 
-  // 小隐藏：直接加一袋盲袋
-  if (coin === 'secret_s') {
-    ctx.queue++
-    ev.isSecretSmall = true
+  ctx.opened.push({
+    slot: isBonus ? 'bonus' : 'order',
+    design,
+    coin,
+    designs: allDesigns,
+    coins: allCoins,
+    luckyVal,
+    isCrit,
+    upgraded,
+    isHiddenBag,
+    hiddenBagType,
+    hiddenBagCount,
+  })
+
+  const ev = {
+    slot: isBonus ? 'bonus' : 'order',
+    design,
+    coin,
+    bonus: isBonus,
+    luckyHit: false,
+    luckyVal,
+    isCrit,
+    upgraded,
+    isHiddenBag,
+    hiddenBagType,
+    hiddenBagCount,
+    allDesigns,
+    allCoins,
+    isFirstBag,
+    firstCoin,
+    destinyHit,
+    destinyColor: order.destinyColor,
   }
 
-  // 大隐藏：自选款式触发
-  if (coin === 'secret_b') {
-    ev.isSecretBig = true
+  // 饰品统计（包含隐藏盲袋内的多件饰品）
+  for (const d of allDesigns) {
+    if (!d) continue
+    if (d.rarity === 'epic' || d.rarity === 'legendary') {
+      if (!s.stats.bestPull || RARITIES[d.rarity].bonus > RARITIES[s.stats.bestPull.rarity].bonus) {
+        s.stats.bestPull = { rarity: d.rarity, name: d.name }
+      }
+      s.stats.epicsPulled++
+    }
+    if (design && s.trend.style && d.id === s.trend.style) {
+      ctx.styleFans = (ctx.styleFans || 0) + 1
+      ev.styleHit = true
+    }
   }
 
-  // 硬币只记账，对对碰延后到拆完全部队列统一结算（见 resolvePairs）
-  if (coin) {
-    ctx.tally[coin] = (ctx.tally[coin] || 0) + 1
+  // 硬币统计（包含隐藏盲袋内的多枚硬币）
+  for (let i = 0; i < allCoins.length; i++) {
+    const c = allCoins[i]
+    if (!c) continue
+    ctx.tally[c] = (ctx.tally[c] || 0) + 1
+
+    // 天选命中色判定：仅天选单生效。除第一袋首枚确立硬币（已在首袋确立时加拆）外，本单每拆中天选命中色均自动加拆一袋
+    const isFirstCoinOfFirstBag = isFirstBag && i === 0
+    if (order.isDestinyOrder && order.destinyColor && c === order.destinyColor && !isFirstCoinOfFirstBag) {
+      ctx.luckyHits = (ctx.luckyHits || 0) + 1
+      ctx.destinyHits = (ctx.destinyHits || 0) + 1
+      ctx.queue++
+      ev.destinyHit = true
+      ev.luckyHit = true
+    }
+
+    // 普通订单单主命中色判定：非天选单且单主有预设命中色，本单每拆中命中色硬币自动加拆一袋
+    if (!order.isDestinyOrder && order.lucky && c === order.lucky) {
+      ctx.luckyHits = (ctx.luckyHits || 0) + 1
+      ctx.queue++
+      ev.luckyHit = true
+    }
+
+    // 小隐藏：直接加一袋盲袋
+    if (c === 'secret_s') {
+      ctx.queue++
+      ev.isSecretSmall = true
+    }
+
+    // 大隐藏：自选款式触发
+    if (c === 'secret_b') {
+      ev.isSecretBig = true
+    }
   }
+
   return ev
 }
 

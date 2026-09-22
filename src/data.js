@@ -166,7 +166,7 @@ export const COINS = {
   blue:     { key: 'blue',     name: '蓝', hex: '#5AA9FF', type: 'heat',      val: 1,    pair: '热度 +1' },
   purple:   { key: 'purple',   name: '紫', hex: '#C77DFF', type: 'fans',      val: 2,    pair: '粉丝 +2' },
   green:    { key: 'green',    name: '绿', hex: '#7DE2D1', type: 'moneyMult', val: 0.05, pair: '本单收入 +5%' },
-  secret_s: { key: 'secret_s', name: '秘', hex: '#C2D1E5', type: 'addBag',    val: 1,    pair: '小隐藏 · 加拆1袋', isSecret: 'small' },
+  secret_s: { key: 'secret_s', name: '秘', hex: '#EBBC7F', type: 'addBag',    val: 1,    pair: '小隐藏 · 加拆1袋', isSecret: 'small' },
   secret_b: { key: 'secret_b', name: '幻', hex: '#FF5EC8', type: 'pickStyle', val: 1,    pair: '大隐藏 · 自选款式', isSecret: 'big' },
 }
 export const COIN_KEYS = Object.keys(COINS)

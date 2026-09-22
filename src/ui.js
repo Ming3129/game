@@ -146,15 +146,15 @@ export function updateTopbarNumbers(s) {
 function showHelp() {
   sfx.tap()
   openModal(`
-    <div class="help-cover-banner">
-      <img src="./cover.jpg" alt="今夜拆什么" referrerPolicy="no-referrer" />
-    </div>
     <h3 class="m-title">玩法说明</h3>
     <div class="help-body">
-      <p><b>白天</b>：商店买盲盒（开出新款式解锁图鉴并入库 10 件）→ 装袋：每袋 1 件饰品 + 1 枚硬币，单色硬币不超过总数的40%。</p>
+      <p><b>商店</b>：商店每日能买10个盲盒 （可花钱更新次数）。开出新款式解锁图鉴并入库 10 件；已有款式的数量由饰品等级而决定。</p>
+      <p><b>装袋</b>：每个盲袋里面有 1 件饰品 + 1 枚硬币，单色硬币不超过总数的40%。可自动或者手动装袋。</p>
       <p><b>直播</b>：粉丝数量制定订单数量。拆袋时——拆到<b>幸运色</b>硬币多拆一袋；同色硬币<b>凑成对</b>触发「对对碰」：多拆一袋 + 增效。木盘全部碰空还有「清盘」奖励三袋。</p>
+      <p><b>投流</b>：粉丝数到达10，000自动解锁。每天玩家都能投流一次，每次花费¥200。 投流之后会增加直播热度，直播热度超过粉丝数的20%时系统额外追加1笔推流订单，此订单最终收益享有双倍结算。</p>
+      <p><b>奶一口</b>：玩家可以在每单最后选择给单主奶一口（增加一袋）。</p>
+      <p><b>随机事件</b>：每场直播会有几率触发随机事件，分为涨粉或跌粉事件</p>
       <p><b>下播</b>：按订单结算收入，观众评价影响粉丝加成。当日风向品类订单收入 + 50%。</p>
-      ${ENABLE_GEM_CHANNEL ? '<p><b>后期</b>：1万粉就能解锁宝石市场，每日随机刷新宝石，镶嵌限定饰品，直接上架直播间。</p>' : ''}
     </div>
     <button class="btn btn-primary m-close">知道了</button>
   `, { closable: true }).el.querySelector('.m-close').onclick = function () { this.closest('.modal-mask').classList.remove('show'); setTimeout(() => this.closest('.modal-mask').remove(), 220) }
