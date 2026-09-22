@@ -690,10 +690,10 @@ function nextOrder(stage) {
     stage.innerHTML = `
       <div class="order-card stockout-order ${o.doublePrice ? 'order-card-promo' : ''}">
         <div class="oc-tag ${o.doublePrice ? 'promo' : trendHit ? 'hot' : ''}">
-          ${o.doublePrice ? '<span class="oc-tag-promo">🔥投流推广单</span> · ' : ''}${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}${o.doublePrice ? ' · 收益翻倍 ×2' : ''}
+          ${o.doublePrice ? '<span class="oc-tag-promo">投流推广单</span> · ' : ''}${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}${o.doublePrice ? ' · 收益翻倍 ×2' : ''}
         </div>
         <div class="oc-buyer-bar">
-          <span class="oc-buyer-badge ${o.doublePrice ? 'promo-buyer' : ''}">${o.doublePrice ? '🔥推流贵宾' : '单主'}</span>
+          <span class="oc-buyer-badge ${o.doublePrice ? 'promo-buyer' : ''}">${o.doublePrice ? '推流贵宾' : '单主'}</span>
           <b class="oc-buyer-name">${o.buyerName || '神秘顾客'}</b>
         </div>
         <div class="oc-main">
@@ -754,10 +754,10 @@ function nextOrder(stage) {
   stage.innerHTML = `
     <div class="order-card ${o.doublePrice ? 'order-card-promo' : ''}">
       <div class="oc-tag ${o.doublePrice ? 'promo' : trendHit ? 'hot' : ''}">
-        ${o.doublePrice ? '<span class="oc-tag-promo">🔥投流推广单</span> · ' : ''}${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}${o.doublePrice ? ' · 收益翻倍 ×2' : ''}
+        ${o.doublePrice ? '<span class="oc-tag-promo">投流推广单</span> · ' : ''}${o.held ? '<span class="oc-tag-held">★保留单</span> · ' : ''}订单 ${orderNum}${trendHit ? ' · 命中风向 ×1.5' : ''}${o.doublePrice ? ' · 收益翻倍 ×2' : ''}
       </div>
       <div class="oc-buyer-bar">
-        <span class="oc-buyer-badge ${o.doublePrice ? 'promo-buyer' : ''}">${o.doublePrice ? '🔥推流贵宾' : '单主'}</span>
+        <span class="oc-buyer-badge ${o.doublePrice ? 'promo-buyer' : ''}">${o.doublePrice ? '推流贵宾' : '单主'}</span>
         <b class="oc-buyer-name">${o.buyerName || '神秘顾客'}</b>
       </div>
       <div class="oc-main">
@@ -773,12 +773,12 @@ function nextOrder(stage) {
       </div>
       <div class="oc-tags-bar" style="display:flex;gap:8px;margin:8px 0 14px 0;flex-wrap:wrap;">
         ${o.isDestinyOrder ? `
-          <span class="oc-chip destiny-chip" title="✨本场专属天选单！单主不预先指定命中色，抽到的第一枚硬币颜色即为单主天选命中色，首袋及后续拆中自动加拆盲袋！">
-            ✨ 本场天选单 <span class="destiny-unrevealed-badge">❓ 首袋揭晓</span>
+          <span class="oc-chip destiny-chip" title="天选单！单主不预先指定命中色，抽到的第一枚硬币颜色即为单主天选命中色，首袋及后续拆中自动加拆盲袋！">
+            天选色 <span class="destiny-unrevealed-badge">❓ 首袋揭晓</span>
           </span>
         ` : (o.lucky ? `
-          <span class="oc-chip order-lucky-chip" title="🎯单主指定命中色！本单每拆中一枚【${COINS[o.lucky].name}】色硬币，自动加拆 1 袋盲袋！">
-            🎯 单主命中色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> <span class="destiny-status-text">命中+1袋</span>
+          <span class="oc-chip order-lucky-chip" title="单主指定命中色！本单每拆中一枚【${COINS[o.lucky].name}】色硬币，自动加拆 1 袋盲袋！">
+            命中色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> <span class="destiny-status-text">命中+1袋</span>
           </span>
         ` : '')}
         <span class="oc-chip dim" title="拆袋硬币在木盘凑成对时，享受今日风向幸运色专属对碰加成">
@@ -828,14 +828,13 @@ function renderBagArea(stage) {
           <span class="lv-ob-buyer">${o.doublePrice ? '🔥 ' : ''}${o.buyerName || '单主'}</span>
           <span class="lv-ob-cat">${icon(o.cat, 18)} <b>${CATS[o.cat].name}盲袋</b></span>
           <span class="lv-ob-spec">原单 ${o.size} 袋</span>
-          ${o.doublePrice ? '<span class="oc-tag-promo">🔥双倍推流</span>' : ''}
-          ${o.isDestinyOrder ? '<span class="oc-tag-destiny">✨天选单</span>' : ''}
-          ${!o.isDestinyOrder && o.lucky ? `<span class="oc-tag-hit">🎯命中:${COINS[o.lucky].name}</span>` : ''}
-          ${trendHit ? '<span class="oc-tag-trend">风向款</span>' : ''}
+          ${o.doublePrice ? '<span class="oc-tag-promo">双倍推流</span>' : ''}
+          ${o.isDestinyOrder ? '<span class="oc-tag-destiny">天选单</span>' : ''}
+          ${trendHit ? '<span class="oc-tag-trend">命中风向</span>' : ''}
         </div>
         <div class="lv-ob-right">
           <div class="lv-ob-count">
-            已拆 <b class="ob-num" id="obOpenedNum">0</b> / <span class="ob-total" id="obTotalNum">${o.size}</span> 袋
+            已拆 <b class="ob-num" id="obOpenedNum">0</b></span> 袋
           </div>
         </div>
       </div>
@@ -849,12 +848,12 @@ function renderBagArea(stage) {
         <div class="lv-tag">展示</div>
         <div class="show-colors">
           ${o.isDestinyOrder ? `
-            <span class="oc-chip destiny-chip ${o.destinyColor ? 'active-destiny' : ''}" id="lvDestinyChip" title="✨本场专属天选单！单主不指定命中色，抽到的第一枚硬币颜色即为单主天选命中色，后续拆中自动加拆！">
-              ${o.destinyColor ? `🎯 天选命中色 <i class="coin-dot sm" style="--cc:${COINS[o.destinyColor].hex}">${COINS[o.destinyColor].name}</i> <span class="destiny-status-text">命中+1袋</span>` : `✨ 单主天选色 <span class="destiny-status-text">❓ 首袋揭晓</span>`}
+            <span class="oc-chip destiny-chip ${o.destinyColor ? 'active-destiny' : ''}" id="lvDestinyChip" title="天选单！单主不指定命中色，抽到的第一枚硬币颜色即为单主天选命中色，后续拆中自动加拆！">
+              ${o.destinyColor ? `天选色 <i class="coin-dot sm" style="--cc:${COINS[o.destinyColor].hex}">${COINS[o.destinyColor].name}</i> <span class="destiny-status-text">命中+1袋</span>` : `单主天选色 <span class="destiny-status-text">❓ 首袋揭晓</span>`}
             </span>
           ` : (o.lucky ? `
-            <span class="oc-chip order-lucky-chip" id="lvOrderLuckyChip" title="🎯单主指定命中色！每拆中【${COINS[o.lucky].name}】色硬币，自动加拆 1 袋盲袋！">
-              🎯 单主命中色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> <span class="destiny-status-text">命中+1袋</span>
+            <span class="oc-chip order-lucky-chip" id="lvOrderLuckyChip" title="单主指定命中色！每拆中【${COINS[o.lucky].name}】色硬币，自动加拆 1 袋盲袋！">
+              命中色 <i class="coin-dot sm" style="--cc:${COINS[o.lucky].hex}">${COINS[o.lucky].name}</i> <span class="destiny-status-text">命中+1袋</span>
             </span>
           ` : '')}
           <span class="oc-chip dim" id="lvLuckyColorChip" title="${COINS[s.trend.lucky].name}色硬币对碰：${COINS[s.trend.lucky].pair}">今日幸运色 <i class="coin-dot sm" style="--cc:${COINS[s.trend.lucky].hex}">${COINS[s.trend.lucky].name}</i> <span id="lvLuckyBuffText">${COINS[s.trend.lucky].pair}</span></span>
@@ -1003,9 +1002,9 @@ function openOne(bagEl) {
       </div>
       <div class="bag-lucky-footer">
         <span class="br-lucky-val" title="盲袋随机欧气值">欧气 ${ev.luckyVal || 80}</span>
-        ${ev.isHiddenBag ? `<span class="br-hidden-tag">✨隐藏款·${ev.hiddenBagCount}${isMultiCoins ? '枚硬币' : '件饰品'}</span>` : ''}
+        ${ev.isHiddenBag ? `<span class="br-hidden-tag">隐藏款·${ev.hiddenBagCount}${isMultiCoins ? '枚硬币' : '件饰品'}</span>` : ''}
         ${ev.isCrit ? '<span class="br-crit-tag">★欧气暴击</span>' : ''}
-        ${ev.upgraded ? '<span class="br-upgraded-tag">✨升级款</span>' : ''}
+        ${ev.upgraded ? '<span class="br-upgraded-tag">升级款</span>' : ''}
       </div>`
 
     if (ev.design.rarity === 'legendary') sfx.legendary()
@@ -1032,7 +1031,7 @@ function openOne(bagEl) {
       const chipEl = document.getElementById('lvDestinyChip')
       if (chipEl) {
         chipEl.classList.add('active-destiny')
-        chipEl.innerHTML = `🎯 天选命中色 <i class="coin-dot sm" style="--cc:${COINS[destinyKey].hex}">${COINS[destinyKey].name}</i> <span class="destiny-status-text">🎯 命中+1袋</span>`
+        chipEl.innerHTML = `天选色 <i class="coin-dot sm" style="--cc:${COINS[destinyKey].hex}">${COINS[destinyKey].name}</i> <span class="destiny-status-text">命中+1袋</span>`
       }
 
       sfx.legendary()
